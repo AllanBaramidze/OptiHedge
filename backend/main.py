@@ -18,36 +18,12 @@ app.add_middleware(
 def read_root():
     return {"message": "OptiHedge FastAPI backend is running"}
 
-@app.post("/upload-portfolio/")
-async def upload_portfolio(file: UploadFile = File(...)):
-    # Basic validation
-    if not file.filename.lower().endswith(('.csv', '.xlsx')):
-        raise HTTPException(status_code=400, detail="Only CSV or Excel files are allowed")
-
-    try:
-        contents = await file.read()
-        
-        # Handle CSV
-        if file.filename.lower().endswith('.csv'):
-            # Decode bytes to string for pandas
-            df = pd.read_csv(StringIO(contents.decode("utf-8")))
-        else:
-            # For .xlsx - requires openpyxl (install if missing)
-            df = pd.read_excel(contents)
-
-        # Create a simple preview
-        preview = df.head(5).to_dict(orient="records")  # first 5 rows as list of dicts
-
-        return {
-            "filename": file.filename,
-            "row_count": len(df),
-            "columns": list(df.columns),
-            "preview": preview,
-            "message": "Portfolio file uploaded and parsed successfully"
-        }
-    except UnicodeDecodeError:
-        raise HTTPException(status_code=400, detail="File encoding issue - try saving as UTF-8 CSV")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
-    finally:
-        await file.close()
+@app.post("/analyze-portfolio/")
+async def analyze_portfolio(data: dict):
+    holdings = data.get("holdings", [])
+    # Later: real analysis
+    return {
+        "message": "Portfolio received",
+        "holdings_count": len(holdings),
+        "received": holdings
+    }
