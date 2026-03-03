@@ -1,0 +1,2 @@
+# OptiHedge
+OpitHedge is a web-based tool designed for retail traders to upload their investment portfolios, analyze exposure risks, and receive AI-driven recommendations for hedging, diversification, and cost-saving strategies. The core functionality leverages a contextualized LLM augmented with tools for technical analysis, drawing from quantitative finance papers on deep learning and deep reinforcement learning for portfolio optimization.
