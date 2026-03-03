@@ -2,7 +2,7 @@ import Link from 'next/link';
 
 export default function Home() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-24 bg-gradient-to-b from-gray-900 to-black text-white">
+    <main className="flex min-h-screen flex-col items-center justify-center p-24 bg-linear-to-b from-gray-900 to-black text-white">
       <h1 className="text-5xl font-bold mb-8">Welcome to OptiHedge</h1>
       <p className="text-xl mb-12 text-center max-w-2xl">
         AI-powered portfolio analysis & hedging for retail traders.
