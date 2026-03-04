@@ -5,9 +5,22 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from "@/components/ui/table";
-import { X, Loader2, Save, CheckCircle2, ArrowRight } from "lucide-react";
+import { 
+  Select, 
+  SelectContent, 
+  SelectItem, 
+  SelectTrigger, 
+  SelectValue 
+} from "@/components/ui/select";
+import { X, Loader2, Save, CheckCircle2, ArrowRight, Trash2 } from "lucide-react";
 import debounce from "lodash.debounce";
-import { savePortfolio, getLatestPortfolio } from "./actions"; 
+import { 
+  savePortfolio, 
+  getLatestPortfolio, 
+  getAllWallets, 
+  getPortfolioById, 
+  deletePortfolio 
+} from "./actions"; 
 
 // --- Types & Interfaces ---
 interface StockSuggestion {
@@ -22,11 +35,15 @@ interface PortfolioItem {
   avgCost: number;
 }
 
-// Interface to fix the "any" lint error in the load callback
 interface DBPortfolioItem {
   symbol: string;
   quantity: number;
   avg_cost: number;
+}
+
+interface Wallet {
+  id: string;
+  name: string;
 }
 
 const formatCurrency = (value: number) =>
@@ -39,7 +56,11 @@ export default function PortfolioBuilder() {
   const [loading, setLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  
+  // Wallet Selection State
   const [walletName, setWalletName] = useState("My New Portfolio");
+  const [allWallets, setAllWallets] = useState<Wallet[]>([]);
+  const [currentWalletId, setCurrentWalletId] = useState<string | null>(null);
   
   const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
   const [selectedStock, setSelectedStock] = useState<StockSuggestion | null>(null);
@@ -75,7 +96,6 @@ export default function PortfolioBuilder() {
     []
   );
 
-  // RESTORED: This useEffect was missing in your previous draft, causing "fetchSuggestions" to be unused.
   useEffect(() => {
     if (!selectedStock) {
       fetchSuggestions(searchTerm);
@@ -85,12 +105,14 @@ export default function PortfolioBuilder() {
     };
   }, [searchTerm, selectedStock, fetchSuggestions]);
 
-  // LOAD DATA ON MOUNT
+  // LOAD ALL WALLETS AND LATEST ON MOUNT
   useEffect(() => {
-    const loadExistingWallet = async () => {
+    const init = async () => {
+      const wallets = await getAllWallets();
+      setAllWallets(wallets);
+
       const latest = await getLatestPortfolio();
       if (latest && latest.portfolio_items) {
-        // FIXED: Using DBPortfolioItem interface to avoid "any" error
         const formattedItems = latest.portfolio_items.map((item: DBPortfolioItem) => ({
           symbol: item.symbol,
           description: "", 
@@ -100,13 +122,33 @@ export default function PortfolioBuilder() {
         
         setPortfolio(formattedItems);
         setWalletName(latest.name);
+        setCurrentWalletId(latest.id);
       }
     };
 
-    loadExistingWallet();
+    init();
   }, []);
 
   // --- Handlers ---
+  const handleSelectWallet = async (id: string) => {
+    try {
+      const data = await getPortfolioById(id);
+      if (data && data.portfolio_items) {
+        const formattedItems = data.portfolio_items.map((item: DBPortfolioItem) => ({
+          symbol: item.symbol,
+          description: "",
+          quantity: item.quantity,
+          avgCost: item.avg_cost,
+        }));
+        setPortfolio(formattedItems);
+        setWalletName(data.name);
+        setCurrentWalletId(data.id);
+      }
+    } catch (err) {
+      console.error("Failed to fetch wallet:", err);
+    }
+  };
+
   const handleSelectStock = (stock: StockSuggestion) => {
     setSelectedStock(stock);
     setSearchTerm(`${stock.symbol} - ${stock.description}`);
@@ -147,15 +189,45 @@ export default function PortfolioBuilder() {
     try {
       const result = await savePortfolio(walletName, portfolio);
       if (result.success) {
-        alert(`Successfully saved "${walletName}" to your account!`);
+        const updatedWallets = await getAllWallets();
+        setAllWallets(updatedWallets);
+        setCurrentWalletId(result.portfolioId); // Set the new ID
+        alert(`Successfully saved "${walletName}"!`);
       }
     } catch (err) {
       console.error("Save failed:", err);
-      alert("Error saving to database. Are you logged in?");
     } finally {
       setIsSaving(false);
     }
   };
+
+  const handleDeleteWallet = async () => {
+  if (!currentWalletId || !confirm(`Delete "${walletName}"? This cannot be undone.`)) return;
+  
+  try {
+    await deletePortfolio(currentWalletId);
+    
+    // 1. Fetch the updated list of wallets first
+    const updatedWallets = await getAllWallets();
+    setAllWallets(updatedWallets);
+
+    if (updatedWallets.length > 0) {
+      // 2. If there are wallets left, pick the first one and load it
+      const nextWallet = updatedWallets[0];
+      handleSelectWallet(nextWallet.id);
+    } else {
+      // 3. Only if everything is gone, reset to the empty state
+      setPortfolio([]);
+      setWalletName("My New Portfolio");
+      setCurrentWalletId(null);
+    }
+    
+    alert("Wallet deleted successfully.");
+  } catch (err) {
+    console.error("Delete failed:", err);
+    alert("Could not delete the wallet. Please try again.");
+  }
+};
 
   const handleSubmitAnalysis = async () => {
     if (portfolio.length === 0) return;
@@ -167,8 +239,6 @@ export default function PortfolioBuilder() {
         body: JSON.stringify({ holdings: portfolio }),
       });
       if (!res.ok) throw new Error("Backend analysis failed");
-      
-      // FIXED: Removed "const data =" to satisfy unused variable linting
       await res.json();
       alert("Analysis complete! Check console for results.");
     } catch (err) {
@@ -178,7 +248,6 @@ export default function PortfolioBuilder() {
     }
   };
 
-  // --- UI Logic ---
   const isAddDisabled = !selectedStock || !quantity || !avgCost || Number(quantity) <= 0 || Number(avgCost) <= 0;
   const totalPortfolioValue = portfolio.reduce((sum, item) => sum + item.quantity * item.avgCost, 0);
 
@@ -206,7 +275,6 @@ export default function PortfolioBuilder() {
                   <X className="h-4 w-4" />
                 </button>
               )}
-              {/* RESTORED: The logic using "loading" and "suggestions" now functions correctly */}
               {loading && !selectedStock && (
                   <Loader2 className="absolute right-3 top-2.5 h-4 w-4 animate-spin text-muted-foreground" />
               )}
@@ -233,22 +301,45 @@ export default function PortfolioBuilder() {
 
       {portfolio.length > 0 ? (
         <Card className="max-w-4xl mx-auto shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+          <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between space-y-4 md:space-y-0 pb-6">
             <div>
               <CardTitle>Your Wallet</CardTitle>
-              <CardDescription>Construct your portfolio before saving.</CardDescription>
+              <CardDescription>Construct and manage your modular portfolios.</CardDescription>
             </div>
-            <div className="flex items-center gap-2">
+            
+            <div className="flex flex-wrap items-center gap-3">
+              <Select onValueChange={handleSelectWallet} value={currentWalletId || undefined}>
+                <SelectTrigger className="w-[180px] h-9 bg-background">
+                  <SelectValue placeholder="Switch Wallet" />
+                </SelectTrigger>
+                <SelectContent>
+                  {allWallets.map((w) => (
+                    <SelectItem key={w.id} value={w.id}>
+                      {w.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
               <Input 
                 className="w-48 h-9" 
                 value={walletName} 
                 onChange={(e) => setWalletName(e.target.value)} 
                 placeholder="Wallet Name"
               />
-              <Button variant="outline" size="sm" onClick={handleSaveToDatabase} disabled={isSaving}>
-                {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
-                Save Wallet
-              </Button>
+              
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={handleSaveToDatabase} disabled={isSaving}>
+                  {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
+                  Save
+                </Button>
+
+                {currentWalletId && (
+                  <Button variant="destructive" size="icon" className="h-9 w-9" onClick={handleDeleteWallet}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
             </div>
           </CardHeader>
           <CardContent>
@@ -268,7 +359,6 @@ export default function PortfolioBuilder() {
                   {portfolio.map((item) => (
                     <TableRow key={item.symbol}>
                       <TableCell className="font-medium">{item.symbol}</TableCell>
-                      {/* FIXED: Changed max-w-[200px] to max-w-50 to satisfy Tailwind linting */}
                       <TableCell className="max-w-50 truncate">{item.description}</TableCell>
                       <TableCell className="text-right">{item.quantity}</TableCell>
                       <TableCell className="text-right">{formatCurrency(item.avgCost)}</TableCell>

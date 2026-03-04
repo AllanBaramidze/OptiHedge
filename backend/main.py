@@ -1,10 +1,13 @@
+# uv run uvicorn main:app --reload --port 8000
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 import yfinance as yf
 import pandas as pd
 import numpy as np
+from engine.strategycomparison import calculate_mvo_baseline, get_performance_paths
+from engine.risk import get_risk_metrics
 
 # --- Initialize App ---
 app = FastAPI(
@@ -16,16 +19,16 @@ app = FastAPI(
 # --- CORS Middleware ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Your Next.js dev server
+    allow_origins=["http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# --- Data Models (Strict Typing) ---
+# --- Data Models ---
 class PortfolioItem(BaseModel):
     symbol: str
-    description: str
+    description: Optional[str] = ""
     quantity: float
     avgCost: float
 
@@ -35,61 +38,90 @@ class PortfolioRequest(BaseModel):
 # --- Endpoints ---
 @app.get("/")
 async def root():
-    return {"message": "OptiHedge API is running."}
+    return {"message": "OptiHedge API is active."}
 
 @app.post("/analyze-portfolio/")
-async def analyze_portfolio(payload: PortfolioRequest):
-    holdings = payload.holdings
-
-    if not holdings:
-        raise HTTPException(status_code=400, detail="Portfolio is empty.")
-
-    # 1. Extract tickers and calculate current portfolio weights
-    tickers = [item.symbol for item in holdings]
-    total_value = sum(item.quantity * item.avgCost for item in holdings)
+async def analyze_portfolio(request: PortfolioRequest):
+    # 1. Clean and Validate Input Symbols
+    # Filter out placeholders like 'string' and convert to uppercase
+    raw_symbols = [h.symbol.upper().strip() for h in request.holdings if h.symbol.lower() != "string"]
     
-    #Debugging logs
-    print(f"\n--- NEW ANALYSIS REQUEST ---")
-    print(f"Received {len(holdings)} assets: {tickers}")
-    print(f"Total Portfolio Value: ${total_value:,.2f}\n")
-
-    weights = {
-        item.symbol: (item.quantity * item.avgCost) / total_value 
-        for item in holdings
-    }
+    if not raw_symbols:
+        raise HTTPException(status_code=400, detail="No valid stock symbols provided.")
 
     try:
-        # 2. Fetch 1 year of historical daily closing prices
-        historical_data = yf.download(tickers, period="1y", progress=False)['Close']
+        # 2. Fetch Market Data
+        # Use auto_adjust=True to get "Close" as the dividend-adjusted price directly
+        raw_data = yf.download(raw_symbols + ["SPY"], period="3y", progress=False, auto_adjust=True)
+    
+        if raw_data.empty:
+            raise HTTPException(status_code=404, detail="Yahoo Finance returned no data.")
+
+        # Handle MultiIndex: If multiple tickers, 'Close' is a level. 
+        # If single ticker, it might just be a Series or a simple DataFrame.
+        if isinstance(raw_data.columns, pd.MultiIndex):
+            data = raw_data['Close']
+        else:
+            data = raw_data[['Close']]
+            # If it's a single ticker, yfinance might not use the ticker as a column name
+            # We ensure it's a DataFrame with ticker columns
+    
+        # Check which symbols actually returned data
+        valid_symbols = [s for s in raw_symbols if s in data.columns and not data[s].isnull().all()]
+    
+        if not valid_symbols:
+            raise HTTPException(status_code=404, detail="Could not find valid price columns in downloaded data.")
+
+        # 3. Data Pre-processing
+        # We use 'Close' now because auto_adjust=True makes it the adjusted price
+        returns = data[valid_symbols].pct_change().dropna()
+        spy_returns = data["SPY"].pct_change().dropna()
+
+        # 4. Portfolio Weighting (Current Allocation)
+        # Calculate weights based ONLY on the valid symbols found
+        current_holdings = [h for h in request.holdings if h.symbol.upper() in valid_symbols]
+        total_val = sum([h.quantity * h.avgCost for h in current_holdings])
         
-        # If only one ticker is passed, yfinance returns a Series. Force it to a DataFrame.
-        if isinstance(historical_data, pd.Series):
-            historical_data = historical_data.to_frame(name=tickers[0])
+        user_weights = pd.Series({
+            h.symbol.upper(): (h.quantity * h.avgCost) / total_val 
+            for h in current_holdings
+        })
+        
+        user_returns = (returns * user_weights).sum(axis=1)
 
-        # 3. Calculate daily returns & volatility
-        daily_returns = historical_data.pct_change().dropna()
-        annual_volatility = daily_returns.std() * np.sqrt(252)
+        # 5. Engine Calculations
+        mvo_weights = calculate_mvo_baseline(data[valid_symbols])
+        mvo_path = get_performance_paths(returns, mvo_weights)
+        risk_stats = get_risk_metrics(user_returns, spy_returns)
 
-        # 4. Return unified data to Next.js
+        # 6. Structured Response
         return {
+            "metrics": {
+                "var": f"{round(risk_stats['var'] * 100, 2)}%",
+                "sharpe": round(risk_stats['sharpe'], 2),
+                "beta": round(risk_stats['beta'], 2),
+                "drawdown": f"{round(risk_stats['max_drawdown'] * 100, 2)}%"
+            },
+            "chart": {
+                "data": [
+                    {
+                        "x": mvo_path.index.strftime('%Y-%m-%d').tolist(),
+                        "y": (mvo_path).tolist(),
+                        "name": "MVO Strategy (Backtest)",
+                        "line": {"color": "#10b981", "width": 2}
+                    }
+                ],
+                "layout": {
+                    "template": "plotly_dark",
+                    "paper_bgcolor": "rgba(0,0,0,0)",
+                    "plot_bgcolor": "rgba(0,0,0,0)",
+                    "margin": {"t": 30, "l": 30, "r": 30, "b": 30}
+                }
+            },
             "status": "success",
-            "portfolio_summary": {
-                "total_positions": len(holdings),
-                "total_value": total_value,
-                "assets": tickers,
-                "current_weights": weights
-            },
-            "market_data": {
-                "trading_days_analyzed": len(daily_returns),
-                "annualized_volatility": annual_volatility.to_dict()
-            },
-            "ai_analysis": {
-                "risk_score": 75, # Mocked until DL model is integrated
-                "diversification_warning": True,
-                "suggested_hedge": f"Consider allocating ${(total_value * 0.15):,.2f} to inverse ETFs or defensive sectors to reduce drawdown risk."
-            }
+            "analyzed_assets": valid_symbols
         }
 
     except Exception as e:
-        print(f"Data fetching error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch market data from yfinance.")
+        print(f"Backend Error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal Quant Engine Error.")

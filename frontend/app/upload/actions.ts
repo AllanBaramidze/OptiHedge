@@ -89,3 +89,81 @@ export async function getLatestPortfolio() {
 
   return data;
 }
+
+export async function getAllWallets() {
+  const cookieStore = await cookies();
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) { return cookieStore.get(name)?.value; },
+      },
+    }
+  );
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return [];
+
+  const { data, error } = await supabase
+    .from("portfolios")
+    .select("id, name")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false });
+
+  if (error) return [];
+  return data;
+}
+
+export async function getPortfolioById(id: string) {
+  const cookieStore = await cookies();
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) { return cookieStore.get(name)?.value; },
+      },
+    }
+  );
+
+  const { data, error } = await supabase
+    .from("portfolios")
+    .select(`
+      id,
+      name,
+      portfolio_items (
+        symbol,
+        quantity,
+        avg_cost
+      )
+    `)
+    .eq("id", id)
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function deletePortfolio(id: string) {
+  const cookieStore = await cookies();
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) { return cookieStore.get(name)?.value; },
+        set(name: string, value: string, options: CookieOptions) { cookieStore.set({ name, value, ...options }); },
+        remove(name: string, options: CookieOptions) { cookieStore.delete({ name, ...options }); },
+      },
+    }
+  );
+
+  // Because of 'ON DELETE CASCADE' in our SQL, deleting the portfolio 
+  // automatically deletes all its items!
+  const { error } = await supabase.from("portfolios").delete().eq("id", id);
+  
+  if (error) throw error;
+  revalidatePath("/upload");
+  return { success: true };
+}
