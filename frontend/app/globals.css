@@ -124,3 +124,46 @@
     @apply bg-background text-foreground;
   }
 }
+@keyframes ascii-bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-20px); /* Adjust height of the bounce here */
+  }
+}
+
+.animate-bounce-slow {
+  animation: ascii-bounce 3s ease-in-out infinite;
+}
+@layer utilities {
+  @keyframes card-spin-extreme {
+    0% { 
+      transform: perspective(800px) rotateY(-45deg) rotateX(10deg) scale(0.9); 
+      filter: drop-shadow(0 0 20px rgba(255, 255, 255, 0.2));
+    }
+    50% { 
+      transform: perspective(800px) rotateY(45deg) rotateX(-10deg) scale(1.1); 
+      filter: drop-shadow(0 0 40px rgba(255, 255, 255, 0.6));
+    }
+    100% { 
+      transform: perspective(800px) rotateY(-45deg) rotateX(10deg) scale(0.9); 
+      filter: drop-shadow(0 0 20px rgba(255, 255, 255, 0.2));
+    }
+  }
+
+  .animate-card-spin-extreme {
+    animation: card-spin-extreme 5s ease-in-out infinite;
+    transform-style: preserve-3d;
+    backface-visibility: visible;
+  }
+}
+@keyframes card-spin {
+  0%, 100% { transform: perspective(1000px) rotateY(-5deg) rotateX(2deg); }
+  50% { transform: perspective(1000px) rotateY(5deg) rotateX(-2deg); }
+}
+
+.animate-card-spin {
+  animation: card-spin 6s ease-in-out infinite;
+  transform-style: preserve-3d;
+}

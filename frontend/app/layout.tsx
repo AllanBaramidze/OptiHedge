@@ -25,16 +25,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    // Added "dark" class if you are using Tailwind's dark mode by default
     <html lang="en" className="dark">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen flex flex-col bg-background text-foreground`}
-      >
-        {/* Render the Navbar globally at the top of every page */}
+      {/* Changed bg-background to bg-black to prevent the "grey vs black" seam */}
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen flex flex-col bg-black text-foreground`}>
         <Navbar />
-        
-        {/* Main content area grows to fill the remaining screen space */}
-        <main className="grow">
+        {/* 'flex-grow' ensures this fills all space below the navbar */}
+        <main className="flex-grow flex flex-col">
           {children}
         </main>
       </body>
