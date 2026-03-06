@@ -252,7 +252,7 @@ export default function PortfolioBuilder() {
   const totalPortfolioValue = portfolio.reduce((sum, item) => sum + item.quantity * item.avgCost, 0);
 
   return (
-    <main className="container mx-auto p-4 md:p-8 space-y-8">
+    <main className="pt-24 px-6 md:px-10 space-y-8">
       <Card className="max-w-4xl mx-auto shadow-sm">
         <CardHeader>
           <CardTitle className="text-2xl">Build Your Portfolio</CardTitle>

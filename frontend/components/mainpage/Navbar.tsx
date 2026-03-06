@@ -33,6 +33,7 @@ export default async function Navbar() {
 
   const { data: { user } } = await supabase.auth.getUser();
 
+  // --- Sign Out Server Action ---
   async function signOut() {
     "use server";
     const cookieStore = await cookies();
@@ -42,8 +43,12 @@ export default async function Navbar() {
       {
         cookies: {
           get(name: string) { return cookieStore.get(name)?.value },
-          set(name: string, value: string, options: CookieOptions) { cookieStore.set({ name, value, ...options }) },
-          remove(name: string, options: CookieOptions) { cookieStore.delete({ name, ...options }) },
+          set(name: string, value: string, options: CookieOptions) { 
+            cookieStore.set({ name, value, ...options }) 
+          },
+          remove(name: string, options: CookieOptions) { 
+            cookieStore.delete({ name, ...options }) 
+          },
         },
       }
     );
@@ -53,7 +58,11 @@ export default async function Navbar() {
 
   return (
     <NavbarVisibilityWrapper>
-      {/* Glassmorphism Classes: bg-black/40, backdrop-blur-xl, border-white/5 */}
+      {/* Glassmorphism Implementation:
+          - bg-black/40: Semi-transparent background
+          - backdrop-blur-xl: Frosted glass effect
+          - border-white/5: Subtle edge definition
+      */}
       <nav className="w-full border-b border-white/5 bg-black/40 backdrop-blur-xl px-6 py-3 flex items-center justify-between shadow-2xl">
         <div className="flex items-center gap-8">
           <Link href="/" className="text-xl font-bold tracking-tight text-white hover:opacity-70 transition-opacity">
@@ -75,7 +84,9 @@ export default async function Navbar() {
               <DropdownMenuTrigger className="outline-none">
                 <div className="flex items-center gap-3 hover:opacity-80 transition-opacity cursor-pointer">
                   <div className="text-right hidden sm:block">
-                    <p className="text-sm font-medium leading-none text-white">{user.user_metadata.full_name}</p>
+                    <p className="text-sm font-medium leading-none text-white">
+                      {user.user_metadata.full_name}
+                    </p>
                   </div>
                   {user.user_metadata.avatar_url ? (
                     <Image 
@@ -93,18 +104,24 @@ export default async function Navbar() {
                 </div>
               </DropdownMenuTrigger>
               
-              <DropdownMenuContent align="end" className="w-56 mt-2 bg-black/80 backdrop-blur-xl border-white/10 text-white">
-                <DropdownMenuLabel>My Account</DropdownMenuLabel>
+              <DropdownMenuContent 
+                align="end" 
+                className="w-56 mt-2 bg-black/80 backdrop-blur-xl border-white/10 text-white shadow-2xl"
+              >
+                <DropdownMenuLabel className="font-semibold">My Account</DropdownMenuLabel>
                 <DropdownMenuSeparator className="bg-white/10" />
-                <DropdownMenuItem className="cursor-not-allowed opacity-50">
+                
+                <DropdownMenuItem className="cursor-not-allowed opacity-50 focus:bg-white/5">
                   <User className="mr-2 h-4 w-4" /> <span>Profile</span>
                 </DropdownMenuItem>
-                <DropdownMenuItem className="cursor-not-allowed opacity-50">
+                <DropdownMenuItem className="cursor-not-allowed opacity-50 focus:bg-white/5">
                   <Settings className="mr-2 h-4 w-4" /> <span>Settings</span>
                 </DropdownMenuItem>
+                
                 <DropdownMenuSeparator className="bg-white/10" />
+                
                 <form action={signOut}>
-                  <button type="submit" className="w-full text-left">
+                  <button type="submit" className="w-full text-left outline-none">
                     <DropdownMenuItem className="text-red-400 focus:text-red-400 cursor-pointer focus:bg-red-400/10">
                       <LogOut className="mr-2 h-4 w-4" /> <span>Sign out</span>
                     </DropdownMenuItem>

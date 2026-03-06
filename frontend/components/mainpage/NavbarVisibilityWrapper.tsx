@@ -1,20 +1,42 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { usePathname } from "next/navigation";
 
 export default function NavbarVisibilityWrapper({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   const [isVisible, setIsVisible] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  // Check if we are on the home page
+  const isHomePage = pathname === "/";
 
   useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      setMounted(true);
+      
+      // If we aren't on the home page, the navbar should be visible immediately
+      if (!isHomePage) {
+        setIsVisible(true);
+      }
+    });
+
     const handleScroll = () => {
-      // Reveal the navbar after scrolling 350px 
-      // This aligns with when the 'OptiHedge' text starts appearing
-      setIsVisible(window.scrollY > 350);
+      // Only apply the scroll logic on the Home Page
+      if (isHomePage) {
+        setIsVisible(window.scrollY > 350);
+      }
     };
 
     window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
+    
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", handleScroll);
+    };
+  }, [isHomePage]); // Re-run effect when the page changes
+
+  if (!mounted) return null;
 
   return (
     <div 

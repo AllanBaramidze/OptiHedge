@@ -9,7 +9,7 @@ import {
 
 export default function Dashboard() {
   return (
-    <div className="container mx-auto p-6 md:p-10 space-y-8">
+    <div className="pt-24 px-6 md:px-10 space-y-8">
       {/* Header Section */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
