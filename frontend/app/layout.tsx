@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "OptiHedge | AI Portfolio Analysis",
+  title: "OptiHedge",
   description: "Advanced portfolio analysis and hedging for retail traders.",
 };
 

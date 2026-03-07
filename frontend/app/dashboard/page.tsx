@@ -1,4 +1,4 @@
-import RiskCard from "@/components/dashboard/RiskCard";
+import RiskCard from "@/app/dashboard/RiskCard";
 import { 
   ShieldAlert, 
   TrendingUp, 

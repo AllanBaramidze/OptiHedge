@@ -1,26 +1,15 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useEffect, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from "@/components/ui/table";
-import { 
-  Select, 
-  SelectContent, 
-  SelectItem, 
-  SelectTrigger, 
-  SelectValue 
-} from "@/components/ui/select";
-import { X, Loader2, Save, CheckCircle2, ArrowRight, Trash2 } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { X, Loader2, Save, CheckCircle2, ArrowRight, Trash2, LayoutDashboard } from "lucide-react";
 import debounce from "lodash.debounce";
-import { 
-  savePortfolio, 
-  getLatestPortfolio, 
-  getAllWallets, 
-  getPortfolioById, 
-  deletePortfolio 
-} from "./actions"; 
+import { savePortfolio, getLatestPortfolio, getAllWallets, getPortfolioById, deletePortfolio } from "./actions"; 
 
 // --- Types & Interfaces ---
 interface StockSuggestion {
@@ -256,7 +245,7 @@ export default function PortfolioBuilder() {
       <Card className="max-w-4xl mx-auto shadow-sm">
         <CardHeader>
           <CardTitle className="text-2xl">Build Your Portfolio</CardTitle>
-          <CardDescription>Search for an asset and add it to your modular wallet.</CardDescription>
+          <CardDescription>Search for an asset and add it to your wallet.</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
@@ -301,15 +290,15 @@ export default function PortfolioBuilder() {
 
       {portfolio.length > 0 ? (
         <Card className="max-w-4xl mx-auto shadow-sm">
-          <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between space-y-4 md:space-y-0 pb-6">
+          <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between space-y-4 md:space-y-0 pb-6 border-b border-border/50">
             <div>
               <CardTitle>Your Wallet</CardTitle>
-              <CardDescription>Construct and manage your modular portfolios.</CardDescription>
+              <CardDescription>Construct and manage your portfolios.</CardDescription>
             </div>
             
             <div className="flex flex-wrap items-center gap-3">
               <Select onValueChange={handleSelectWallet} value={currentWalletId || undefined}>
-                <SelectTrigger className="w-[180px] h-9 bg-background">
+                <SelectTrigger className="w-45 h-9 bg-background">
                   <SelectValue placeholder="Switch Wallet" />
                 </SelectTrigger>
                 <SelectContent>
@@ -342,7 +331,7 @@ export default function PortfolioBuilder() {
               </div>
             </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-6">
             <div className="border rounded-md">
               <Table>
                 <TableHeader>
@@ -380,8 +369,26 @@ export default function PortfolioBuilder() {
                 </TableFooter>
               </Table>
             </div>
-            <div className="mt-6">
-              <Button onClick={handleSubmitAnalysis} disabled={isSubmitting} size="lg" className="w-full">
+
+            {/* ACTION BUTTONS SECTION */}
+            <div className="mt-8 flex flex-col sm:flex-row gap-4">
+              <Link href="/dashboard" className="flex-1">
+                <Button 
+                  variant="secondary" 
+                  size="lg" 
+                  className="w-full bg-zinc-800 hover:bg-zinc-700 text-white border border-white/5 shadow-md"
+                >
+                  <LayoutDashboard className="mr-2 h-4 w-4" />
+                  Go to Dashboard
+                </Button>
+              </Link>
+
+              <Button 
+                onClick={handleSubmitAnalysis} 
+                disabled={isSubmitting} 
+                size="lg" 
+                className="flex-1 shadow-lg shadow-primary/10"
+              >
                 {isSubmitting ? (
                     <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Analyzing...</>
                 ) : (

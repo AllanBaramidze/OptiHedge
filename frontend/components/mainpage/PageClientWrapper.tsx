@@ -71,7 +71,7 @@ export default function PageClientWrapper({ asciiArt }: { asciiArt: string }) {
           <h1 className="text-7xl md:text-9xl font-bold tracking-tighter text-white drop-shadow-[0_0_30px_rgba(255,255,255,0.2)]">
             OptiHedge
           </h1>
-          <p className="mt-4 text-white/40 text-sm md:text-lg tracking-[0.5em] uppercase">
+          <p className="mt-4 text-white/40 text-sm md:text-lg tracking-[0.9em] uppercase">
             Risk Management Evolved
           </p>
         </div>
@@ -82,7 +82,7 @@ export default function PageClientWrapper({ asciiArt }: { asciiArt: string }) {
       <div className="h-[150vh] w-full pointer-events-none" />
 
       {/* THE CONTENT: Appears after the user scrolls past the transition */}
-      <div className="relative z-50 bg-black shadow-[0_-50px_100px_50px_rgba(0,0,0,1)]">
+      <div className="relative z-100 bg-black shadow-[0_-50px_100px_50px_rgba(0,0,0,1)]">
         <LandingPage />
         {/* Extra space for the footer/bottom of page */}
         <div className="h-[50vh]" />
