@@ -5,46 +5,45 @@ import { usePathname } from "next/navigation";
 
 export default function NavbarVisibilityWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const [isVisible, setIsVisible] = useState(false);
-  const [mounted, setMounted] = useState(false);
-
-  // Check if we are on the home page
   const isHomePage = pathname === "/";
+  
+  // If not home, start visible. If home, start hidden.
+  const [isVisible, setIsVisible] = useState(!isHomePage);
 
   useEffect(() => {
-    const frame = requestAnimationFrame(() => {
-      setMounted(true);
-      
-      // If we aren't on the home page, the navbar should be visible immediately
-      if (!isHomePage) {
-        setIsVisible(true);
-      }
-    });
+    if (!isHomePage) {
+      setIsVisible(true);
+      return;
+    }
 
     const handleScroll = () => {
-      // Only apply the scroll logic on the Home Page
-      if (isHomePage) {
-        setIsVisible(window.scrollY > 350);
+      const scrollPos = window.scrollY;
+      
+      // FIX: Once we pass 350, keep it visible. 
+      // Only hide it if the user scrolls back up near the top (e.g., < 100)
+      if (scrollPos > 350) {
+        setIsVisible(true);
+      } else if (scrollPos < 100) {
+        setIsVisible(false);
       }
     };
 
     window.addEventListener("scroll", handleScroll, { passive: true });
+    // Initial check
+    handleScroll();
     
-    return () => {
-      cancelAnimationFrame(frame);
-      window.removeEventListener("scroll", handleScroll);
-    };
-  }, [isHomePage]); // Re-run effect when the page changes
-
-  if (!mounted) return null;
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [isHomePage]);
 
   return (
     <div 
-      className={`fixed top-0 left-0 right-0 z-[100] transition-all duration-700 ease-in-out ${
+      className={`fixed top-0 left-0 right-0 transition-all duration-700 ease-in-out ${
         isVisible 
           ? "opacity-100 translate-y-0" 
-          : "opacity-0 -translate-y-full pointer-events-none"
+          : "opacity-0 -translate-y-10 pointer-events-none"
       }`}
+      // Ensure this is HIGHER than any other z-index in your app
+      style={{ zIndex: 9999 }} 
     >
       {children}
     </div>

@@ -58,12 +58,10 @@ export default async function Navbar() {
 
   return (
     <NavbarVisibilityWrapper>
-      {/* Glassmorphism Implementation:
-          - bg-black/40: Semi-transparent background
-          - backdrop-blur-xl: Frosted glass effect
-          - border-white/5: Subtle edge definition
+      {/* FIXED: Added 'h-16' for height stability. 
+          The wrapper needs a consistent child size to avoid 'vanishing' glitches.
       */}
-      <nav className="w-full border-b border-white/5 bg-black/40 backdrop-blur-xl px-6 py-3 flex items-center justify-between shadow-2xl">
+      <nav className="w-full h-16 border-b border-white/5 bg-black/40 backdrop-blur-xl px-6 flex items-center justify-between shadow-2xl">
         <div className="flex items-center gap-8">
           <Link href="/" className="text-xl font-bold tracking-tight text-white hover:opacity-70 transition-opacity">
             OptiHedge
@@ -81,24 +79,24 @@ export default async function Navbar() {
         <div className="flex items-center gap-4">
           {user ? (
             <DropdownMenu>
-              <DropdownMenuTrigger className="outline-none">
-                <div className="flex items-center gap-3 hover:opacity-80 transition-opacity cursor-pointer">
+              <DropdownMenuTrigger className="outline-none group">
+                <div className="flex items-center gap-3 group-hover:opacity-80 transition-opacity cursor-pointer">
                   <div className="text-right hidden sm:block">
                     <p className="text-sm font-medium leading-none text-white">
-                      {user.user_metadata.full_name}
+                      {user.user_metadata?.full_name || "User"}
                     </p>
                   </div>
-                  {user.user_metadata.avatar_url ? (
+                  {user.user_metadata?.avatar_url ? (
                     <Image 
                       src={user.user_metadata.avatar_url} 
                       alt="Profile" 
-                      width={36} 
-                      height={36} 
+                      width={32} 
+                      height={32} 
                       className="rounded-full border border-white/10"
                     />
                   ) : (
-                    <div className="w-9 h-9 rounded-full bg-white/5 flex items-center justify-center border border-white/10">
-                      <User className="h-5 w-5 text-white/60" />
+                    <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center border border-white/10">
+                      <User className="h-4 w-4 text-white/60" />
                     </div>
                   )}
                 </div>
@@ -106,9 +104,9 @@ export default async function Navbar() {
               
               <DropdownMenuContent 
                 align="end" 
-                className="w-56 mt-2 bg-black/80 backdrop-blur-xl border-white/10 text-white shadow-2xl"
+                className="w-56 mt-2 bg-black/90 backdrop-blur-xl border-white/10 text-white shadow-2xl"
               >
-                <DropdownMenuLabel className="font-semibold">My Account</DropdownMenuLabel>
+                <DropdownMenuLabel className="font-semibold text-white/70">My Account</DropdownMenuLabel>
                 <DropdownMenuSeparator className="bg-white/10" />
                 
                 <DropdownMenuItem className="cursor-not-allowed opacity-50 focus:bg-white/5">

@@ -10,9 +10,7 @@ export default function PageClientWrapper({ asciiArt }: { asciiArt: string }) {
 
   useEffect(() => {
     const timer = setTimeout(() => setMounted(true), 0);
-
     const handleScroll = () => {
-      // The transition happens over the first 600px of scroll
       const progress = Math.min(window.scrollY / 600, 1);
       setScrollProgress(progress);
     };
@@ -26,11 +24,8 @@ export default function PageClientWrapper({ asciiArt }: { asciiArt: string }) {
 
   if (!mounted) return null;
 
-  // Layer 1: ASCII Art (Fades out, scales up slightly)
   const asciiOpacity = Math.max(1 - scrollProgress * 2.5, 0); 
   const asciiScale = 1 + (scrollProgress * 0.1);
-
-  // Layer 2: Main Text (Fades in, blurs in)
   const textOpacity = scrollProgress > 0.4 ? (scrollProgress - 0.4) * 1.6 : 0;
   const textBlur = Math.max(20 - (scrollProgress * 40), 0);
 
@@ -44,9 +39,8 @@ export default function PageClientWrapper({ asciiArt }: { asciiArt: string }) {
         }}
       />
 
-      {/* THE VIEWPORT STICKY: Keeps everything centered during scroll */}
+      {/* STICKY VIEWPORT */}
       <div className="fixed inset-0 flex items-center justify-center pointer-events-none overflow-hidden h-screen w-full">
-        
         {/* Layer: ASCII Card */}
         <div 
           className="absolute flex items-center justify-center w-full"
@@ -65,7 +59,7 @@ export default function PageClientWrapper({ asciiArt }: { asciiArt: string }) {
           style={{ 
             opacity: textOpacity,
             filter: `blur(${textBlur}px)`,
-            transform: `translateY(${(1 - scrollProgress) * 20}px)` // Slides up slightly as it appears
+            transform: `translateY(${(1 - scrollProgress) * 20}px)`
           }}
         >
           <h1 className="text-7xl md:text-9xl font-bold tracking-tighter text-white drop-shadow-[0_0_30px_rgba(255,255,255,0.2)]">
@@ -75,17 +69,15 @@ export default function PageClientWrapper({ asciiArt }: { asciiArt: string }) {
             Risk Management Evolved
           </p>
         </div>
-
       </div>
 
-      {/* THE PADDING: Provides the "length" of the scroll transition */}
-      <div className="h-[150vh] w-full pointer-events-none" />
+      {/* 1. SCROLL BUFFER: This provides the transition length */}
+      <div className="h-[120vh] w-full pointer-events-none" />
 
-      {/* THE CONTENT: Appears after the user scrolls past the transition */}
-      <div className="relative z-100 bg-black shadow-[0_-50px_100px_50px_rgba(0,0,0,1)]">
+      {/* 2. THE CONTENT: This starts after the scroll buffer */}
+      <div className="relative z-[50] bg-black shadow-[0_-100px_100px_rgba(0,0,0,1)]">
         <LandingPage />
-        {/* Extra space for the footer/bottom of page */}
-        <div className="h-[50vh]" />
+        {/* FIXED: Removed the h-[50vh] div from here */}
       </div>
     </div>
   );

@@ -1,3 +1,4 @@
+// page.tsx
 import React from 'react';
 import fs from 'fs';
 import path from 'path';
@@ -14,10 +15,11 @@ export default function Page() {
   }
 
   return (
-    <div className="grow flex flex-col relative overflow-x-hidden bg-black">
-      {/* Permanent background glow that persists across transitions */}
+    // REMOVED: grow, flex, flex-col. 
+    // KEEP: relative, overflow-x-hidden, bg-black
+    <div className="relative overflow-x-hidden bg-black">
       <div 
-        className="fixed inset-0 z-0 opacity-40 animate-pulse pointer-events-none"
+        className="fixed inset-0 z-[-1] opacity-40 animate-pulse pointer-events-none"
         style={{ background: 'radial-gradient(circle at center, rgba(255,255,255,0.12) 0%, rgba(0,0,0,1) 85%)' }}
       />
 
