@@ -1,7 +1,5 @@
 import Hero from './sections/Hero';
 import ProblemSolution from './sections/ProblemSolution';
-import FeaturesBento from './sections/FeaturesBento';
-import HowItWorks from './sections/HowItWorks';
 import Footer from './sections/Footer';
 
 export default function LandingPage() {
@@ -11,8 +9,6 @@ export default function LandingPage() {
     <div className="w-full">
       <Hero />
       <ProblemSolution />
-      <FeaturesBento />
-      <HowItWorks />
       <Footer />
     </div>
   );

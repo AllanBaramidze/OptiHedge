@@ -2,78 +2,123 @@ import React from 'react';
 import Link from 'next/link';
 import { Twitter, Github, Linkedin, Mail } from 'lucide-react';
 
+
+// Configuration
+
+
+/**
+ * Footer link configuration.
+ * Extracted from JSX to keep the component clean and make future additions trivial.
+ */
+const FOOTER_CATEGORIES = [
+  {
+    title: 'Tools',
+    links: [
+      { label: 'Wallet Creation', href: '/upload' },
+      { label: 'Dashboard', href: '/dashboard' },
+      { label: 'Hedge Discovery', href: '/risk' },
+    ],
+  },
+  {
+    title: 'References',
+    links: [
+      { label: 'Research Papers', href: '#' },
+      { label: 'Glossary', href: '#' },
+    ],
+  },
+  {
+    title: 'Contact',
+    links: [
+      { label: 'Support / Email', href: 'mailto:support@optihedge.com' }, // Placeholder email
+      { label: 'GitHub Repository', href: 'https://github.com/AllanBaramidze' },
+      { label: 'Report a Bug', href: '#' },
+    ],
+  },
+];
+
+// Main Component
+
+
 export default function Footer() {
   return (
-    <footer className="w-full bg-black border-t border-white/5 pt-24 pb-12 px-6">
+    <footer className="w-full bg-black border-t border-white/5 pt-20 pb-10 px-6 sm:px-10">
       <div className="max-w-7xl mx-auto">
-        {/* Bottom CTA Block */}
-        <div className="relative rounded-3xl bg-gradient-to-b from-white/[0.03] to-transparent border border-white/10 p-12 mb-24 overflow-hidden text-center">
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-px bg-gradient-to-r from-transparent via-blue-500/50 to-transparent" />
-          
-          <h2 className="text-3xl md:text-4xl font-bold text-white mb-6">Ready to hedge smarter?</h2>
-          <p className="text-white/50 mb-8 max-w-lg mx-auto">
-            Join 1,200+ retail traders using AI to protect their upside. 
-            No credit card required.
-          </p>
-          <Link 
-            href="/upload" 
-            className="inline-flex items-center gap-2 px-8 py-4 bg-white text-black font-bold rounded-xl hover:scale-105 transition-transform"
-          >
-            Start Free Analysis
-          </Link>
-        </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-12 mb-16">
-          <div className="col-span-2 lg:col-span-2">
-            <Link href="/" className="text-2xl font-bold tracking-tight text-white mb-6 block">
+        {/* Top Section: Brand & Link Columns */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-12 lg:gap-8 mb-16">
+          
+          {/* Brand & Socials Column (Takes up 2 columns on large screens) */}
+          <div className="lg:col-span-2">
+            <Link href="/" className="text-2xl font-bold tracking-tight text-white mb-4 block hover:text-white/80 transition-colors">
               OptiHedge
             </Link>
-            <p className="text-white/40 text-sm leading-relaxed max-w-xs mb-6">
+            <p className="text-zinc-500 text-sm leading-relaxed max-w-sm mb-6">
               Empowering retail investors with state-of-the-art AI and quant models. 
-              Protecting gains shouldn't be a privilege of the elite.
+              Protecting gains shouldn&apos;t be a privilege of the elite.
             </p>
-            <div className="flex gap-4">
-              <Twitter className="w-5 h-5 text-white/20 hover:text-blue-400 cursor-pointer transition-colors" />
-              <Github className="w-5 h-5 text-white/20 hover:text-white cursor-pointer transition-colors" />
-              <Linkedin className="w-5 h-5 text-white/20 hover:text-blue-600 cursor-pointer transition-colors" />
+            
+            {/* Social Icons */}
+            <div className="flex gap-4 items-center">
+              <a 
+                href="https://x.com/amidze1" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                aria-label="Twitter Profile"
+                className="text-zinc-500 hover:text-[#1DA1F2] transition-colors"
+              >
+                <Twitter className="w-5 h-5" />
+              </a>
+              <a 
+                href="https://github.com/AllanBaramidze" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                aria-label="GitHub Profile"
+                className="text-zinc-500 hover:text-white transition-colors"
+              >
+                <Github className="w-5 h-5" />
+              </a>
+              {/* Optional placeholders for future use */}
+              <a 
+                href="https://www.linkedin.com/in/allan-b-234145230/" 
+                aria-label="LinkedIn Profile"
+                className="text-zinc-500 hover:text-[#0A66C2] transition-colors"
+              >
+                <Linkedin className="w-5 h-5" />
+              </a>
             </div>
           </div>
 
-          <div>
-            <h4 className="text-white font-bold text-sm mb-6">Product</h4>
-            <ul className="space-y-4 text-sm text-white/40">
-              <li><Link href="/risk" className="hover:text-white">Risk Analysis</Link></li>
-              <li><Link href="/upload" className="hover:text-white">Portfolio Sync</Link></li>
-              <li><Link href="/pricing" className="hover:text-white">Pricing</Link></li>
-            </ul>
-          </div>
-
-          <div>
-            <h4 className="text-white font-bold text-sm mb-6">Company</h4>
-            <ul className="space-y-4 text-sm text-white/40">
-              <li><Link href="/about" className="hover:text-white">Research</Link></li>
-              <li><Link href="/privacy" className="hover:text-white">Privacy Policy</Link></li>
-              <li><Link href="/terms" className="hover:text-white">Terms of Service</Link></li>
-            </ul>
-          </div>
-
-          <div className="hidden lg:block">
-            <h4 className="text-white font-bold text-sm mb-6">Support</h4>
-            <ul className="space-y-4 text-sm text-white/40">
-              <li className="flex items-center gap-2"><Mail className="w-4 h-4" /> support@optihedge.ai</li>
-              <li><Link href="/docs" className="hover:text-white">Documentation</Link></li>
-            </ul>
-          </div>
+          {/* Dynamic Link Columns */}
+          {FOOTER_CATEGORIES.map((category) => (
+            <div key={category.title}>
+              <h4 className="text-white font-semibold text-sm mb-5">{category.title}</h4>
+              <ul className="space-y-3.5 text-sm">
+                {category.links.map((link) => (
+                  <li key={link.label}>
+                    <Link 
+                      href={link.href} 
+                      className="text-zinc-500 hover:text-zinc-300 transition-colors duration-200"
+                    >
+                      {link.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+         
         </div>
 
-        <div className="pt-8 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-6">
-          <p className="text-white/20 text-xs">
-            © 2026 OptiHedge. Built by traders for traders.
+        {/* Bottom Section: Copyright & Disclaimer */}
+        <div className="pt-8 border-t border-white/10 flex flex-col md:flex-row justify-between items-center gap-4">
+          <p className="text-zinc-600 text-xs">
+            © {new Date().getFullYear()} OptiHedge. Built for reassurance.
           </p>
-          <p className="text-white/20 text-[10px] uppercase tracking-widest max-w-md text-center md:text-right">
+          <p className="text-zinc-600 text-[10px] uppercase tracking-widest max-w-lg text-center md:text-right leading-relaxed">
             Disclaimers: Not financial advice. Past performance does not guarantee future results.
           </p>
         </div>
+        
       </div>
     </footer>
   );

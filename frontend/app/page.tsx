@@ -3,6 +3,8 @@ import React from 'react';
 import fs from 'fs';
 import path from 'path';
 import PageClientWrapper from '@/components/mainpage/PageClientWrapper';
+import ScrollArrow from '@/components/mainpage/ScrollArrow';
+
 
 export default function Page() {
   const filePath = path.join(process.cwd(), 'public', 'art.txt');
@@ -24,6 +26,7 @@ export default function Page() {
       />
 
       <PageClientWrapper asciiArt={asciiArt} />
+      <ScrollArrow />
     </div>
   );
 }

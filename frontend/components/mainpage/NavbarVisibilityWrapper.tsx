@@ -7,33 +7,37 @@ export default function NavbarVisibilityWrapper({ children }: { children: React.
   const pathname = usePathname();
   const isHomePage = pathname === "/";
   
-  // If not home, start visible. If home, start hidden.
-  const [isVisible, setIsVisible] = useState(!isHomePage);
+  // 1. This state now ONLY tracks if the user has scrolled enough on the Home Page
+  const [isScrolled, setIsScrolled] = useState(false);
+
+  // 2. DERIVED STATE: This is the magic. 
+  // If it's not the home page, it's ALWAYS visible.
+  // If it IS the home page, visibility depends on the scroll state.
+  const isVisible = !isHomePage || isScrolled;
 
   useEffect(() => {
-    if (!isHomePage) {
-      setIsVisible(true);
-      return;
-    }
+    // If we aren't on the home page, we don't need a scroll listener at all
+    if (!isHomePage) return;
 
     const handleScroll = () => {
       const scrollPos = window.scrollY;
       
-      // FIX: Once we pass 350, keep it visible. 
-      // Only hide it if the user scrolls back up near the top (e.g., < 100)
+      // Keep the "Buffer" logic: 
+      // Show after 350px, hide only when back above 100px
       if (scrollPos > 350) {
-        setIsVisible(true);
+        setIsScrolled(true);
       } else if (scrollPos < 100) {
-        setIsVisible(false);
+        setIsScrolled(false);
       }
     };
 
     window.addEventListener("scroll", handleScroll, { passive: true });
-    // Initial check
+    
+    // Check initial position in case they refresh halfway down the home page
     handleScroll();
     
     return () => window.removeEventListener("scroll", handleScroll);
-  }, [isHomePage]);
+  }, [isHomePage]); // Only re-run if we switch between home and other pages
 
   return (
     <div 
@@ -42,7 +46,6 @@ export default function NavbarVisibilityWrapper({ children }: { children: React.
           ? "opacity-100 translate-y-0" 
           : "opacity-0 -translate-y-10 pointer-events-none"
       }`}
-      // Ensure this is HIGHER than any other z-index in your app
       style={{ zIndex: 9999 }} 
     >
       {children}

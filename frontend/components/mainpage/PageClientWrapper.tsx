@@ -11,7 +11,7 @@ export default function PageClientWrapper({ asciiArt }: { asciiArt: string }) {
   useEffect(() => {
     const timer = setTimeout(() => setMounted(true), 0);
     const handleScroll = () => {
-      const progress = Math.min(window.scrollY / 600, 1);
+      const progress = Math.min(window.scrollY / 100, 1);
       setScrollProgress(progress);
     };
 
@@ -41,9 +41,11 @@ export default function PageClientWrapper({ asciiArt }: { asciiArt: string }) {
 
       {/* STICKY VIEWPORT */}
       <div className="fixed inset-0 flex items-center justify-center pointer-events-none overflow-hidden h-screen w-full">
+        
         {/* Layer: ASCII Card */}
+        {/* ADDED pointer-events-auto here so the mouse can interact with it */}
         <div 
-          className="absolute flex items-center justify-center w-full"
+          className="absolute flex items-center justify-center w-full pointer-events-auto"
           style={{ 
             opacity: asciiOpacity,
             transform: `scale(${asciiScale})`,
@@ -55,7 +57,7 @@ export default function PageClientWrapper({ asciiArt }: { asciiArt: string }) {
 
         {/* Layer: Main Title */}
         <div 
-          className="absolute flex flex-col items-center justify-center w-full text-center"
+          className="absolute flex flex-col items-center justify-center w-full text-center pointer-events-none"
           style={{ 
             opacity: textOpacity,
             filter: `blur(${textBlur}px)`,
@@ -75,9 +77,8 @@ export default function PageClientWrapper({ asciiArt }: { asciiArt: string }) {
       <div className="h-[120vh] w-full pointer-events-none" />
 
       {/* 2. THE CONTENT: This starts after the scroll buffer */}
-      <div className="relative z-[50] bg-black shadow-[0_-100px_100px_rgba(0,0,0,1)]">
+      <div className="relative z-50 bg-black shadow-[0_-100px_100px_rgba(0,0,0,1)]">
         <LandingPage />
-        {/* FIXED: Removed the h-[50vh] div from here */}
       </div>
     </div>
   );
