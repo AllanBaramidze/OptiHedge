@@ -25,7 +25,7 @@ export function SortableWidget({ widget, data, loading, onRemove }: SortableWidg
     isOver
   } = useSortable({ id: widget.id });
 
-  // FIXED: Defined sizeClasses inside the component
+  // Defined sizeClasses inside the component
   const sizeClasses = {
     small: 'col-span-1',
     medium: 'col-span-1 lg:col-span-2',

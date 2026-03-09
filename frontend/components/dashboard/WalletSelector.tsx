@@ -9,7 +9,7 @@ import {
   SelectValue 
 } from "@/components/ui/select";
 import { Loader2, Wallet as WalletIcon } from "lucide-react";
-import { getAllWallets } from "@/app/upload/actions"; // Adjust this path if your actions are elsewhere
+import { getAllWallets } from "@/app/upload/actions"; 
 
 interface Wallet {
   id: string;

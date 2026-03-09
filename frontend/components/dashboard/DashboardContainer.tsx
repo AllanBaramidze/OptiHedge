@@ -31,7 +31,7 @@ import { WalletSelector } from "./WalletSelector";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { getPortfolioById } from "@/app/upload/actions";
 
-// --- EXPORTED TYPES ---
+// Export Types
 export type WidgetSize = "small" | "medium" | "large";
 
 export interface WidgetData {
@@ -42,7 +42,6 @@ export interface WidgetData {
   description: string;
 }
 
-// Ensure this interface matches the structure returned by your FastAPI backend
 interface ChartData {
   data: Array<{
     x: string[];
@@ -66,7 +65,7 @@ export interface AnalysisResponse {
     drawdown: string;
     [key: string]: string | number;
   };
-  chart: ChartData; // FIXED: Changed from 'any' to 'ChartData'
+  chart: ChartData; 
   status: string;
   analyzed_assets: string[];
 }
@@ -77,7 +76,7 @@ interface SupabasePortfolioItem {
   avg_cost: number;
 }
 
-// --- CONSTANTS ---
+// Consts
 const INITIAL_LAYOUT: WidgetData[] = [
   {
     id: "sharpe-ratio-1",
@@ -123,7 +122,7 @@ const ALL_AVAILABLE_WIDGETS: Omit<WidgetData, "id">[] = [
   },
 ];
 
-// --- HYDRATION HELPERS (Fixes "Cannot find name") ---
+// Hydration Helpers (Fixes "Cannot find name") 
 const subscribe = () => () => {};
 const getSnapshot = () => true;
 const getServerSnapshot = () => false;
@@ -258,7 +257,7 @@ export default function DashboardContainer() {
                 {...activeWidget} // spread title, size, description, etc.
                 id={activeWidget.id}
                 isOverlay
-                // Optional: slight scale or opacity to indicate "dragging"
+                // slight scale or opacity to indicate "dragging"
                 classNameOverride="opacity-90 scale-[1.03] shadow-2xl ring-2 ring-white/30"
               />
             )}
