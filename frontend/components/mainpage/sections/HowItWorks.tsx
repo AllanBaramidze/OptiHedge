@@ -40,7 +40,7 @@ export default function HowItWorks() {
 
         <div className="relative grid grid-cols-1 md:grid-cols-3 gap-12">
           {/* Connecting Line (Desktop) */}
-          <div className="hidden md:block absolute top-1/2 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-y-1/2 -z-10" />
+          <div className="hidden md:block absolute top-1/2 left-0 w-full h-px bg-linear-to-r from-transparent via-white/10 to-transparent -translate-y-1/2 -z-10" />
 
           {steps.map((step, i) => (
             <motion.div
@@ -53,7 +53,7 @@ export default function HowItWorks() {
             >
               {/* Step Number Circle */}
               <div className={`mb-8 relative h-20 w-20 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center transition-all duration-500 group-hover:scale-110 group-hover:border-white/20`}>
-                <div className={`absolute inset-0 rounded-2xl bg-gradient-to-br ${step.color} opacity-0 group-hover:opacity-10 blur-xl transition-opacity`} />
+                <div className={`absolute inset-0 rounded-2xl bg-linear-to-br ${step.color} opacity-0 group-hover:opacity-10 blur-xl transition-opacity`} />
                 <step.icon className="h-8 w-8 text-white transition-transform group-hover:rotate-6" />
                 
                 {/* Step Number Badge */}
@@ -63,7 +63,7 @@ export default function HowItWorks() {
               </div>
 
               <h3 className="text-xl font-bold text-white mb-3">{step.title}</h3>
-              <p className="text-white/50 text-sm leading-relaxed max-w-[250px]">
+              <p className="text-white/50 text-sm leading-relaxed max-w-62.5">
                 {step.desc}
               </p>
 

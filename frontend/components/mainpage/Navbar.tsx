@@ -1,31 +1,32 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
-import { createServerClient, type CookieOptions } from '@supabase/ssr'
+import { createServerClient } from '@supabase/ssr'
 import { redirect } from "next/navigation";
 import GoogleLoginButton from "./GoogleLoginButton";
-import Image from "next/image";
 import NavbarVisibilityWrapper from "./NavbarVisibilityWrapper";
-
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { LogOut, User, Settings } from "lucide-react";
+import NavbarClient from "./NavbarClient";
 
 export default async function Navbar() {
   const cookieStore = await cookies();
-  
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value
+        getAll() {
+          return cookieStore.getAll()
+        },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            )
+          } catch {
+          // The `setAll` method was called from a Server Component.
+          // This can be ignored if you have middleware refreshing
+          // user sessions.
+          }
         },
       },
     }
@@ -33,7 +34,6 @@ export default async function Navbar() {
 
   const { data: { user } } = await supabase.auth.getUser();
 
-  // --- Sign Out Server Action ---
   async function signOut() {
     "use server";
     const cookieStore = await cookies();
@@ -42,26 +42,24 @@ export default async function Navbar() {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
         cookies: {
-          get(name: string) { return cookieStore.get(name)?.value },
-          set(name: string, value: string, options: CookieOptions) { 
-            cookieStore.set({ name, value, ...options }) 
-          },
-          remove(name: string, options: CookieOptions) { 
-            cookieStore.delete({ name, ...options }) 
-          },
+          getAll() {
+            return cookieStore.getAll()
         },
-      }
-    );
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) =>
+            cookieStore.set(name, value, options)
+          )
+        },
+      },
+    }
+  );
     await supabase.auth.signOut();
     return redirect("/");
   }
 
   return (
     <NavbarVisibilityWrapper>
-      {/* FIXED: Added 'h-16' for height stability. 
-          The wrapper needs a consistent child size to avoid 'vanishing' glitches.
-      */}
-      <nav className="w-full h-16 border-b border-white/5 bg-black/40 backdrop-blur-xl px-6 flex items-center justify-between shadow-2xl">
+      <nav className="w-full h-16 border-b border-white/5 bg-black/40 backdrop-blur-xl px-6 flex items-center justify-between shadow-2xl fixed top-0 z-50">
         <div className="flex items-center gap-8">
           <Link href="/" className="text-xl font-bold tracking-tight text-white hover:opacity-70 transition-opacity">
             OptiHedge
@@ -78,55 +76,7 @@ export default async function Navbar() {
 
         <div className="flex items-center gap-4">
           {user ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger className="outline-none group">
-                <div className="flex items-center gap-3 group-hover:opacity-80 transition-opacity cursor-pointer">
-                  <div className="text-right hidden sm:block">
-                    <p className="text-sm font-medium leading-none text-white">
-                      {user.user_metadata?.full_name || "User"}
-                    </p>
-                  </div>
-                  {user.user_metadata?.avatar_url ? (
-                    <Image 
-                      src={user.user_metadata.avatar_url} 
-                      alt="Profile" 
-                      width={32} 
-                      height={32} 
-                      className="rounded-full border border-white/10"
-                    />
-                  ) : (
-                    <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center border border-white/10">
-                      <User className="h-4 w-4 text-white/60" />
-                    </div>
-                  )}
-                </div>
-              </DropdownMenuTrigger>
-              
-              <DropdownMenuContent 
-                align="end" 
-                className="w-56 mt-2 bg-black/90 backdrop-blur-xl border-white/10 text-white shadow-2xl"
-              >
-                <DropdownMenuLabel className="font-semibold text-white/70">My Account</DropdownMenuLabel>
-                <DropdownMenuSeparator className="bg-white/10" />
-                
-                <DropdownMenuItem className="cursor-not-allowed opacity-50 focus:bg-white/5">
-                  <User className="mr-2 h-4 w-4" /> <span>Profile</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem className="cursor-not-allowed opacity-50 focus:bg-white/5">
-                  <Settings className="mr-2 h-4 w-4" /> <span>Settings</span>
-                </DropdownMenuItem>
-                
-                <DropdownMenuSeparator className="bg-white/10" />
-                
-                <form action={signOut}>
-                  <button type="submit" className="w-full text-left outline-none">
-                    <DropdownMenuItem className="text-red-400 focus:text-red-400 cursor-pointer focus:bg-red-400/10">
-                      <LogOut className="mr-2 h-4 w-4" /> <span>Sign out</span>
-                    </DropdownMenuItem>
-                  </button>
-                </form>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <NavbarClient user={user} signOutAction={signOut} />
           ) : (
             <GoogleLoginButton />
           )}

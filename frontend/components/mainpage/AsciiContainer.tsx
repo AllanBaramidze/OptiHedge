@@ -59,7 +59,7 @@ export default function AsciiContainer({ art }: { art: string }) {
               alt="OptiHedge Card"
               width={800} 
               height={800} 
-              className="w-80 sm:w-96 md:w-[500px] lg:w-[600px] object-contain drop-shadow-[0_0_15px_rgba(255,255,255,0.4)]"
+              className="w-80 sm:w-96 md:w-125 lg:w-150 object-contain drop-shadow-[0_0_15px_rgba(255,255,255,0.4)]"
               priority
             />
           </div>

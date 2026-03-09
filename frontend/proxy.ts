@@ -1,21 +1,20 @@
-import { createServerClient, type CookieOptions } from '@supabase/ssr'
+import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // --- FAST PATH: BYPASS AUTH FOR PUBLIC/INTERNAL ROUTES ---
-  // If it's the landing page, auth callback, or an API, exit in <5ms
+  // --- FAST PATH: BYPASS AUTH ---
   if (
     pathname === '/' || 
     pathname.startsWith('/auth') || 
     pathname.startsWith('/api') ||
-    !pathname.startsWith('/upload')
+    (!pathname.startsWith('/upload') && !pathname.startsWith('/dashboard'))
   ) {
     return NextResponse.next();
   }
 
-  // --- PROTECTED ROUTE LOGIC (/upload) ---
+  // --- PROTECTED ROUTE LOGIC ---
   let response = NextResponse.next({
     request: { headers: request.headers },
   });
@@ -25,17 +24,22 @@ export async function proxy(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get(name: string) { return request.cookies.get(name)?.value },
-        set(name: string, value: string, options: CookieOptions) {
-          request.cookies.set({ name, value, ...options })
-          response = NextResponse.next({ request: { headers: request.headers } })
-          response.cookies.set({ name, value, ...options })
+        getAll() {
+          return request.cookies.getAll()
         },
-        remove(name: string, options: CookieOptions) {
-          request.cookies.set({ name, value: '', ...options })
-          response = NextResponse.next({ request: { headers: request.headers } })
-          response.cookies.set({ name, value: '', ...options })
-        },
+        setAll(cookiesToSet) {
+          // FIXED: Removed 'options' from destructuring here as it was unused
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
+  
+          response = NextResponse.next({
+            request: { headers: request.headers },
+          })
+
+          // This loop is fine because options is used in the .set() call
+          cookiesToSet.forEach(({ name, value, options }) =>
+            response.cookies.set(name, value, options)
+          )
+        }
       },
     }
   )
@@ -53,10 +57,6 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    /*
-     * Exclude assets. This prevents the middleware from 
-     * even waking up for images and styles.
-     */
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }
