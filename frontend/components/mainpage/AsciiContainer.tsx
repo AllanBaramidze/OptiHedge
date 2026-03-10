@@ -28,11 +28,11 @@ export default function AsciiContainer({ art }: { art: string }) {
         }
       `}</style>
 
-      {/* LAYER 1: The Spin (Everything inside this rotates together) */}
+      {/* The Spin (Everything inside this rotates together) */}
       <div className="relative flex items-center justify-center animate-card-spin-extreme">
         
-        {/* --- THE VISUALS --- */}
-        {/* We disable pointer events entirely here so the invisible ASCII padding can't trigger anything */}
+        {/* Visual */}
+        {/*  disable pointer events entirely here so the invisible ASCII padding can't trigger anything */}
         <div className={`pointer-events-none relative flex items-center justify-center transition-all duration-300 ${isPulsing ? 'animate-green-pulse' : ''}`}>
           
           <pre

@@ -2,126 +2,110 @@
 
 import React from 'react';
 import { HelpCircle, Loader2, Trash2 } from "lucide-react";
-import { 
-  Tooltip, 
-  TooltipContent, 
-  TooltipTrigger 
-} from "@/components/ui/tooltip";
-import { WidgetSize } from './DashboardContainer';
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { formatMetric } from "@/lib/utils/formatters";
+import { cn } from "@/lib/utils";
+import * as T from "@/types/dashboard";
 
-
-interface MetricWidgetProps {
-  id: string;
-  title: string;
-  size: WidgetSize;
-  description: string;
-  data?: string | number | null;
+interface MetricWidgetProps extends T.WidgetData {
+  data?: number | string | T.AssetHolding[] | null;
   loading?: boolean;
   isDragging?: boolean;
   isOver?: boolean;
   isOverlay?: boolean;
   onRemove?: (id: string) => void;
-  classNameOverride?: string;
 }
 
-export function MetricWidget({ 
-  id,
-  title, 
-  size, 
-  description, 
-  data, 
-  loading, 
-  isDragging, 
-  isOver, 
-  isOverlay,
-  onRemove
-}: MetricWidgetProps) {
+export function MetricWidget({ id, title, type, description, data, loading, isDragging, isOver, isOverlay, onRemove }: MetricWidgetProps) {
   
-  const widgetHeight = 'h-64';
-  const heightMap = {
-    small: widgetHeight,
-    medium: widgetHeight,
-    large: widgetHeight,
+  const getMetricColor = () => {
+    if (loading || !data || type === "holdings") return "text-white";
+    const val = typeof data === "number" ? data : parseFloat(String(data).replace(/[%,$]/g, ""));
+    if (type.includes("pnl") || type === "alpha") {
+      return val > 0 ? "text-emerald-400" : val < 0 ? "text-rose-400" : "text-white";
+    }
+    return "text-white";
   };
 
-  // Render a dashed placeholder when the widget is lifted
-  if (isDragging) {
+  const renderContent = () => {
+    if (loading) return <Loader2 className="h-5 w-5 animate-spin text-zinc-600" />;
+    if (!data && data !== 0) return <p className="text-zinc-700 text-[10px] uppercase tracking-widest text-center">Connect Wallet</p>;
+
+    if (type === "holdings" && Array.isArray(data)) {
+      return (
+        <div className="w-full h-full overflow-y-auto custom-scrollbar pt-1">
+          <table className="w-full text-left border-separate border-spacing-y-1">
+            <thead className="text-[9px] font-bold text-zinc-600 uppercase tracking-widest sticky top-0 bg-[#121214] z-10">
+              <tr><th className="pb-1">Ticker</th><th className="pb-1 text-right">Value</th></tr>
+            </thead>
+            <tbody className="text-[11px]">
+              {data.map((asset, i) => (
+                <tr key={`${asset.ticker}-${i}`} className="border-t border-zinc-800/30">
+                  <td className="py-1 font-bold text-white">{asset.ticker}</td>
+                  <td className="py-1 text-right text-emerald-400 font-mono">${asset.market_value.toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+
     return (
-      <div className={`${heightMap[size]} w-full rounded-xl border-2 border-dashed transition-colors duration-200 ${isOver ? 'border-white' : 'border-zinc-800'}`} />
+      <div className="text-center animate-in fade-in duration-500 w-full px-2">
+        <span className={cn(
+          // AUTO-SIZE LOGIC: Uses container query units to scale font based on box width
+          "font-mono font-bold tracking-tighter block leading-none text-[clamp(1.5rem,15cqw,3.5rem)]", 
+          getMetricColor()
+        )}>
+          {formatMetric(data as string | number, type)}
+        </span>
+      </div>
     );
-  }
+  };
+
+  if (isDragging) return (
+    <div className={cn("h-full w-full rounded-xl border-2 border-dashed transition-colors", 
+      isOver ? "border-zinc-500 bg-zinc-900/40" : "border-zinc-800 bg-zinc-900/20"
+    )} />
+  );
 
   return (
-    <div className={`
-      bg-[#121214] text-white rounded-xl border border-zinc-800 shadow-xl p-5 transition-all relative overflow-hidden group
-      ${isOverlay ? 'border-zinc-400 shadow-2xl scale-[1.02] pointer-events-none' : ''}
-      ${heightMap[size]}
-      cursor-default
-    `}>
-      <div className="flex justify-between items-start relative z-20">
-        <h3 className="text-[11px] font-bold uppercase text-zinc-500 tracking-[0.15em]">
-          {title}
-        </h3>
-        
-        <div className="flex items-center gap-2">
-          {/* Tooltip logic: 
-              We skip the Tooltip entirely if isOverlay is true to prevent ghosting.
-              We also removed the TooltipProvider as it is now in DashboardContainer.
-          */}
-          {!isOverlay ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button 
-                  className="text-zinc-600 hover:text-white transition-colors cursor-pointer focus:outline-none p-1"
-                  onPointerDown={(e) => e.stopPropagation()}
-                >
-                  <HelpCircle className="h-4 w-4" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent 
-                side="top" 
-                sideOffset={20}
-                className="bg-zinc-900 border-zinc-700 text-zinc-200 max-w-xs p-3 shadow-xl pointer-events-none rounded-lg" // ← rounded-lg for slightly softer look
+    <div className={cn(
+      // CURSOR FIX: Forced cursor-pointer here
+      "bg-[#121214] text-white rounded-xl border border-zinc-800 p-5 group flex flex-col h-full relative overflow-hidden @container cursor-pointer", 
+      isOverlay && "border-zinc-400 shadow-2xl scale-[1.02] pointer-events-none"
+    )}>
+      <div className="flex justify-between items-start z-20 shrink-0">
+        <h3 className="text-[10px] font-bold uppercase text-zinc-500 tracking-widest">{title}</h3>
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          {!isOverlay && (
+            <>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button className="text-zinc-600 hover:text-white p-1 cursor-pointer" onPointerDown={e => e.stopPropagation()}>
+                    <HelpCircle className="h-3.5 w-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent className="bg-zinc-900 border-zinc-700 text-zinc-300 p-2 text-[10px] max-w-50 font-sans shadow-2xl">
+                  {description}
+                </TooltipContent>
+              </Tooltip>
+              <button 
+                onClick={() => onRemove?.(id)} 
+                onPointerDown={e => e.stopPropagation()} 
+                className="text-zinc-600 hover:text-rose-500 p-1 cursor-pointer"
               >
-            <p className="text-xs leading-relaxed">{description}</p>
-            </TooltipContent>
-            </Tooltip>
-          ) : (
-            <HelpCircle className="h-4 w-4 text-zinc-600" />
-          )}
-
-          {/* Delete Icon */}
-          <button 
-            onClick={() => onRemove?.(id)}
-            onPointerDown={(e) => e.stopPropagation()}
-            className="text-zinc-600 hover:text-red-400 transition-colors cursor-pointer focus:outline-none p-1"
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
-
-      <div className="mt-4 flex flex-col h-full">
-        <div className="flex-1 flex items-center justify-center pb-6">
-          {loading ? (
-            <div className="flex flex-col items-center gap-2">
-              <Loader2 className="h-8 w-8 animate-spin text-zinc-700" />
-            </div>
-          ) : data !== undefined && data !== null ? (
-            <div className="text-center animate-in fade-in zoom-in duration-300">
-              <span className="text-5xl font-mono font-bold tracking-tighter text-white">
-                {data}
-              </span>
-            </div>
-          ) : (
-            <div className="text-center px-4">
-              <span className="text-zinc-700 italic text-sm">
-                Select a wallet to project {title}
-              </span>
-            </div>
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </>
           )}
         </div>
       </div>
+      <div className="mt-2 flex-1 flex flex-col items-center justify-center overflow-hidden w-full h-full">
+        {renderContent()}
+      </div>
+      <div className="absolute -bottom-8 -right-8 w-24 h-24 bg-white/1 rounded-full blur-3xl pointer-events-none" />
     </div>
   );
 }

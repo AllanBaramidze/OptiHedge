@@ -1,22 +1,21 @@
 # uv run uvicorn main:app --reload --port 8000
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import List, Optional
-import yfinance as yf
-import pandas as pd
-import numpy as np
-from engine.strategycomparison import calculate_mvo_baseline, get_performance_paths
-from engine.risk import get_risk_metrics
+from pydantic import BaseModel, Field
+from typing import List, Optional, Dict, Any
+import datetime as dt
+from engine.risk import Engine, portfolio_analysis
+from engine.cache import quote_cache
+from engine.providers.yfinance_provider import get_quote
+from engine.providers.forex_provider import get_forex_quote, FOREX_PAIRS
 
-# --- Initialize App ---
 app = FastAPI(
-    title="OptiHedge API",
-    description="AI-driven portfolio analysis and hedging engine.",
-    version="1.0.0"
+    title="OptiHedge Engine",
+    description="Real-time portfolio sync and risk analytics gateway.",
+    version="2.1.0"
 )
 
-# --- CORS Middleware ---
+# Security / CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
@@ -25,103 +24,108 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- Data Models ---
+# Data Models
 class PortfolioItem(BaseModel):
-    symbol: str
-    description: Optional[str] = ""
-    quantity: float
-    avgCost: float
+    symbol: str = Field(..., json_schema_extra={"example": "AAPL"})
+    quantity: float = Field(..., gt=0)
+    avgCost: float = Field(..., gt=0)
 
 class PortfolioRequest(BaseModel):
     holdings: List[PortfolioItem]
 
-# --- Endpoints ---
-@app.get("/")
-async def root():
-    return {"message": "OptiHedge API is active."}
+@app.post("/wallet/sync")
+async def sync_wallet(request: PortfolioRequest):
+    """
+    Synchronizes portfolio with live market data and runs risk engine analysis.
+    """
+    if not request.holdings:
+        raise HTTPException(status_code=400, detail="Wallet is empty.")
 
-@app.post("/analyze-portfolio/")
-async def analyze_portfolio(request: PortfolioRequest):
-    # 1. Clean and Validate Input Symbols
-    # Filter out placeholders like 'string' and convert to uppercase
-    raw_symbols = [h.symbol.upper().strip() for h in request.holdings if h.symbol.lower() != "string"]
-    
-    if not raw_symbols:
-        raise HTTPException(status_code=400, detail="No valid stock symbols provided.")
+    cleaned_holdings = []
+    total_basis = 0.0
+    total_market = 0.0
 
-    try:
-        # 2. Fetch Market Data
-        # Use auto_adjust=True to get "Close" as the dividend-adjusted price directly
-        raw_data = yf.download(raw_symbols + ["SPY"], period="3y", progress=False, auto_adjust=True)
-    
-        if raw_data.empty:
-            raise HTTPException(status_code=404, detail="Yahoo Finance returned no data.")
-
-        # Handle MultiIndex: If multiple tickers, 'Close' is a level. 
-        # If single ticker, it might just be a Series or a simple DataFrame.
-        if isinstance(raw_data.columns, pd.MultiIndex):
-            data = raw_data['Close']
-        else:
-            data = raw_data[['Close']]
-            # If it's a single ticker, yfinance might not use the ticker as a column name
-            # We ensure it's a DataFrame with ticker columns
-    
-        # Check which symbols actually returned data
-        valid_symbols = [s for s in raw_symbols if s in data.columns and not data[s].isnull().all()]
-    
-        if not valid_symbols:
-            raise HTTPException(status_code=404, detail="Could not find valid price columns in downloaded data.")
-
-        # 3. Data Pre-processing
-        # We use 'Close' now because auto_adjust=True makes it the adjusted price
-        returns = data[valid_symbols].pct_change().dropna()
-        spy_returns = data["SPY"].pct_change().dropna()
-
-        # 4. Portfolio Weighting (Current Allocation)
-        # Calculate weights based ONLY on the valid symbols found
-        current_holdings = [h for h in request.holdings if h.symbol.upper() in valid_symbols]
-        total_val = sum([h.quantity * h.avgCost for h in current_holdings])
+    # 1. LIVE PRICE FETCHING & BASIS CALCULATION
+    for item in request.holdings:
+        ticker = item.symbol.upper().strip()
+        basis = item.quantity * item.avgCost
+        total_basis += basis
         
-        user_weights = pd.Series({
-            h.symbol.upper(): (h.quantity * h.avgCost) / total_val 
-            for h in current_holdings
+        # Cache-first fetching logic
+        market_data = await quote_cache.get(ticker)
+        if not market_data:
+            # Route to Forex or Stock provider
+            if ticker in FOREX_PAIRS:
+                market_data = await get_forex_quote(ticker)
+            else:
+                market_data = await get_quote(ticker)
+            
+            if market_data:
+                await quote_cache.set(ticker, market_data)
+
+        price = market_data.get("price", 0.0) if market_data else 0.0
+        mkt_val = item.quantity * price
+        total_market += mkt_val
+
+        cleaned_holdings.append({
+            "ticker": ticker,
+            "qty": item.quantity,
+            "cost": item.avgCost,
+            "price": round(price, 2),
+            "market_value": round(mkt_val, 2),
+            "weight": 0.0 # Will be updated after total_market is finalized
         })
+
+    if total_market == 0:
+        raise HTTPException(status_code=500, detail="Could not fetch market data for assets.")
+
+    # 2. RISK ENGINE PREPARATION
+    tickers = []
+    weights = []
+    
+    for h in cleaned_holdings:
+        # Calculate real-time weights for the Risk Engine
+        h["weight"] = h["market_value"] / total_market
+        tickers.append(h["ticker"])
+        weights.append(h["weight"])
+
+    # 3. RUN RISK ANALYSIS (1-Year Lookback)
+    try:
+        start_date = (dt.date.today() - dt.timedelta(days=365)).strftime('%Y-%m-%d')
+        risk_engine = Engine(
+            start_date=start_date,
+            portfolio=tickers,
+            weights=weights
+        )
+        analysis = portfolio_analysis(risk_engine)
         
-        user_returns = (returns * user_weights).sum(axis=1)
-
-        # 5. Engine Calculations
-        mvo_weights = calculate_mvo_baseline(data[valid_symbols])
-        mvo_path = get_performance_paths(returns, mvo_weights)
-        risk_stats = get_risk_metrics(user_returns, spy_returns)
-
-        # 6. Structured Response
-        return {
-            "metrics": {
-                "var": f"{round(risk_stats['var'] * 100, 2)}%",
-                "sharpe": round(risk_stats['sharpe'], 2),
-                "beta": round(risk_stats['beta'], 2),
-                "drawdown": f"{round(risk_stats['max_drawdown'] * 100, 2)}%"
-            },
-            "chart": {
-                "data": [
-                    {
-                        "x": mvo_path.index.strftime('%Y-%m-%d').tolist(),
-                        "y": (mvo_path).tolist(),
-                        "name": "MVO Strategy (Backtest)",
-                        "line": {"color": "#10b981", "width": 2}
-                    }
-                ],
-                "layout": {
-                    "template": "plotly_dark",
-                    "paper_bgcolor": "rgba(0,0,0,0)",
-                    "plot_bgcolor": "rgba(0,0,0,0)",
-                    "margin": {"t": 30, "l": 30, "r": 30, "b": 30}
-                }
-            },
-            "status": "success",
-            "analyzed_assets": valid_symbols
-        }
-
+        sharpe = analysis.SR
+        beta = analysis.BTA
+        volatility = analysis.VOL
+        max_drawdown = analysis.MD
     except Exception as e:
-        print(f"Backend Error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal Quant Engine Error.")
+        print(f"Risk Engine Error: {e}")
+        sharpe, beta, volatility, max_drawdown = "0.0", 0.0, "0%", "0%"
+
+    # 4. FINAL PAYLOAD CONSTRUCTION
+    pnl = total_market - total_basis
+    
+    return {
+        "status": "ready",
+        "metrics": {
+            "value": round(total_market, 2),
+            "pnl": round(pnl, 2),
+            "pnl_percent": round((pnl / total_basis * 100), 2) if total_basis > 0 else 0,
+            "count": len(cleaned_holdings),
+            "sharpe": sharpe,
+            "beta": beta,
+            "volatility": volatility,
+            "max_drawdown": max_drawdown
+        },
+        "data": cleaned_holdings,
+        "ticker_list": tickers
+    }
+
+@app.get("/health")
+async def health_check():
+    return {"status": "online", "engine": "OptiHedge Risk v2.1"}
