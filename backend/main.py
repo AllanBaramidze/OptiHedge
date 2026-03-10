@@ -2,12 +2,15 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
+from typing import List
 import datetime as dt
-from engine.risk import Engine, portfolio_analysis
+
+# Engine Imports
+from engine.risk import run_portfolio_stats, calculate_movers
 from engine.cache import quote_cache
 from engine.providers.yfinance_provider import get_quote
 from engine.providers.forex_provider import get_forex_quote, FOREX_PAIRS
+from engine.sector import calculate_sector_weights 
 
 app = FastAPI(
     title="OptiHedge Engine",
@@ -36,7 +39,7 @@ class PortfolioRequest(BaseModel):
 @app.post("/wallet/sync")
 async def sync_wallet(request: PortfolioRequest):
     """
-    Synchronizes portfolio with live market data and runs risk engine analysis.
+    Synchronizes portfolio with live market data, runs risk engine, and calculates sectors.
     """
     if not request.holdings:
         raise HTTPException(status_code=400, detail="Wallet is empty.")
@@ -73,57 +76,78 @@ async def sync_wallet(request: PortfolioRequest):
             "cost": item.avgCost,
             "price": round(price, 2),
             "market_value": round(mkt_val, 2),
-            "weight": 0.0 # Will be updated after total_market is finalized
+            "weight": 0.0 
         })
 
     if total_market == 0:
         raise HTTPException(status_code=500, detail="Could not fetch market data for assets.")
 
-    # 2. RISK ENGINE PREPARATION
+    # 2. PREPARE WEIGHTS FOR ENGINES
     tickers = []
     weights = []
-    
     for h in cleaned_holdings:
-        # Calculate real-time weights for the Risk Engine
         h["weight"] = h["market_value"] / total_market
         tickers.append(h["ticker"])
         weights.append(h["weight"])
 
-    # 3. RUN RISK ANALYSIS (1-Year Lookback)
+    # 3. RUN RISK ANALYSIS (Catching all 8 new institutional metrics)
     try:
         start_date = (dt.date.today() - dt.timedelta(days=365)).strftime('%Y-%m-%d')
-        risk_engine = Engine(
-            start_date=start_date,
-            portfolio=tickers,
-            weights=weights
-        )
-        analysis = portfolio_analysis(risk_engine)
         
-        sharpe = analysis.SR
-        beta = analysis.BTA
-        volatility = analysis.VOL
-        max_drawdown = analysis.MD
+        risk_metrics = run_portfolio_stats(tickers, weights, start_date)
+        movers_data = calculate_movers(tickers)
+        
+        sharpe = risk_metrics.get("sharpe", 0.0)
+        beta = risk_metrics.get("beta", 0.0)
+        sortino = risk_metrics.get("sortino", 0.0)
+        max_drawdown = risk_metrics.get("max_drawdown", 0.0)
+        var = risk_metrics.get("var", 0.0)
+        calmar = risk_metrics.get("calmar", 0.0)
+        ulcer_index = risk_metrics.get("ulcer_index", 0.0)
+        skewness = risk_metrics.get("skewness", 0.0)
+        kurtosis = risk_metrics.get("kurtosis", 0.0)
+        diversification = risk_metrics.get("diversification", 1.0)
+        
     except Exception as e:
         print(f"Risk Engine Error: {e}")
-        sharpe, beta, volatility, max_drawdown = "0.0", 0.0, "0%", "0%"
+        sharpe = beta = sortino = max_drawdown = var = calmar = ulcer_index = skewness = kurtosis = 0.0
+        diversification = 1.0
 
-    # 4. FINAL PAYLOAD CONSTRUCTION
+    # 4. RUN SECTOR ANALYSIS
+    try:
+        sector_weights = await calculate_sector_weights(cleaned_holdings)
+    except Exception as e:
+        print(f"Sector Analysis Error: {e}")
+        sector_weights = {}
+    
+
+    # 5. FINAL PAYLOAD CONSTRUCTION
     pnl = total_market - total_basis
     
     return {
-        "status": "ready",
+        "status": "success", 
         "metrics": {
             "value": round(total_market, 2),
             "pnl": round(pnl, 2),
             "pnl_percent": round((pnl / total_basis * 100), 2) if total_basis > 0 else 0,
             "count": len(cleaned_holdings),
+            
+            # The core JSON dictionary your React widgets will look up by "type"
             "sharpe": sharpe,
-            "beta": beta,
-            "volatility": volatility,
-            "max_drawdown": max_drawdown
+            "beta": beta, 
+            "sortino": sortino,
+            "max_drawdown": max_drawdown,
+            "var": var,
+            "calmar": calmar,
+            "ulcer_index": ulcer_index,
+            "skewness": skewness,
+            "kurtosis": kurtosis,
+            "diversification": diversification
         },
         "data": cleaned_holdings,
-        "ticker_list": tickers
+        "sector_weights": sector_weights,
+        "ticker_list": tickers,
+        "movers": movers_data
     }
 
 @app.get("/health")

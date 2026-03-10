@@ -9,7 +9,7 @@ import * as T from "@/types/dashboard";
 
 interface SortableWidgetProps {
   widget: T.WidgetData;
-  data: number | string | T.AssetHolding[] | null | undefined;
+  data: number | string | T.AssetHolding[] | T.SectorWeights | Record<string, T.MoverItem[]> | null | undefined;
   loading?: boolean;
   onRemove: (id: string) => void;
 }

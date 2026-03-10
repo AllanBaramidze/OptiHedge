@@ -23,12 +23,24 @@ import { cn } from "@/lib/utils";
 import * as T from "@/types/dashboard";
 
 const ALL_AVAILABLE_WIDGETS: Omit<T.WidgetData, "id">[] = [
+  // Core Metrics
   { size: "medium", title: "Portfolio Value", type: "value", description: "Current market value of all assets." },
   { size: "small", title: "PnL %", type: "pnl_percent", description: "Overall performance percentage." },
-  { size: "small", title: "Sharpe Ratio", type: "sharpe", description: "Risk-adjusted return vs volatility." },
-  { size: "small", title: "Portfolio Beta", type: "beta", description: "Sensitivity relative to S&P 500." },
   { size: "small", title: "Holdings List", type: "holdings", description: "Vertical list of all active assets." },
-  // add sector exposure, 
+  { size: "small", title: "Sector Exposure", type: "sectors", description: "Portfolio Weights in each Sector."},
+  
+  // Advanced Risk Metrics
+  { size: "small", title: "Sharpe Ratio", type: "sharpe", description: "Risk-adjusted return vs volatility." },
+  { size: "small", title: "Sortino Ratio", type: "sortino", description: "Risk-adjusted return penalizing only downside volatility." },
+  { size: "small", title: "Portfolio Beta", type: "beta", description: "Sensitivity relative to S&P 500." },
+  { size: "small", title: "Max Drawdown", type: "max_drawdown", description: "Largest peak-to-trough drop." },
+  { size: "small", title: "Value at Risk", type: "var", description: "Maximum expected loss at 95% confidence." },
+  { size: "small", title: "Calmar Ratio", type: "calmar", description: "Annualized return divided by Max Drawdown." },
+  { size: "small", title: "Ulcer Index", type: "ulcer_index", description: "Depth and duration of drawdowns." },
+  { size: "small", title: "Skewness", type: "skewness", description: "Asymmetry of returns (Positive = frequent small losses, big gains)." },
+  { size: "small", title: "Kurtosis", type: "kurtosis", description: "Fat tails / extreme event risk." },
+  { size: "small", title: "Diversification", type: "diversification", description: "Weighted asset volatility vs total portfolio volatility." },
+  { size: "large", title: "Top Movers", type: "movers", description: "Best and worst performing assets over time." },
 ];
 
 const INITIAL_LAYOUT: T.WidgetData[] = [
@@ -102,19 +114,23 @@ export default function DashboardContainer() {
 
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           <SortableContext items={widgets} strategy={rectSortingStrategy}>
-            {/* GRID GAP-6 only works if items don't have fixed pixel widths */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 auto-rows-[160px]">
               {widgets.map((w) => {
-                const isHoldings = w.type === "holdings";
+                const isTall = w.type === "holdings" || w.type === "sectors";
                 return (
                   <div key={w.id} className={cn(
-                    w.size === "medium" ? "col-span-2" : "col-span-1",
-                    isHoldings ? "row-span-2" : "row-span-1",
-                    "h-full" // Ensure vertical filling
-                  )}>
+                      w.size === "large" ? "col-span-2 row-span-2" : w.size === "medium" ? "col-span-2 row-span-1" : "col-span-1",
+                      isTall && w.size !== "large" ? "row-span-2" : "",
+                      "h-full"
+                      )}>
                     <SortableWidget
                       widget={w}
-                      data={isHoldings ? analysisData?.data : analysisData?.metrics?.[w.type]}
+                      data={
+                        w.type === "holdings" ? analysisData?.data : 
+                        w.type === "sectors" ? analysisData?.sector_weights :
+                        w.type === "movers" ? analysisData?.movers :
+                        analysisData?.metrics?.[w.type]
+                      }
                       loading={isAnalyzing}
                       onRemove={(id) => setWidgets(prev => prev.filter(x => x.id !== id))}
                     />
@@ -127,13 +143,19 @@ export default function DashboardContainer() {
           <DragOverlay>
             {activeWidget && (
               <div className={cn(
+                activeWidget.size === "large" ? "w-160 h-86" :
                 activeWidget.size === "medium" ? "w-156" : "w-75", 
-                activeWidget.type === "holdings" ? "h-86" : "h-40"
+                (activeWidget.type === "holdings" || activeWidget.type === "sectors") && "h-86"
               )}>
                 <MetricWidget 
                   {...activeWidget} 
                   isOverlay 
-                  data={activeWidget.type === "holdings" ? analysisData?.data : analysisData?.metrics?.[activeWidget.type]} 
+                  data={
+                    activeWidget.type === "holdings" ? analysisData?.data : 
+                    activeWidget.type === "sectors" ? analysisData?.sector_weights : 
+                    activeWidget.type === "movers" ? analysisData?.movers :
+                    analysisData?.metrics?.[activeWidget.type]
+                  } 
                 />
               </div>
             )}

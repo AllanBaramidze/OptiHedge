@@ -1,6 +1,6 @@
 "use client";
 
-import React from 'react';
+import React, { useState } from 'react';
 import { HelpCircle, Loader2, Trash2 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatMetric } from "@/lib/utils/formatters";
@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import * as T from "@/types/dashboard";
 
 interface MetricWidgetProps extends T.WidgetData {
-  data?: number | string | T.AssetHolding[] | null;
+  data?: number | string | T.AssetHolding[] | T.SectorWeights | Record<string, T.MoverItem[]> | null;
   loading?: boolean;
   isDragging?: boolean;
   isOver?: boolean;
@@ -16,20 +16,86 @@ interface MetricWidgetProps extends T.WidgetData {
   onRemove?: (id: string) => void;
 }
 
-export function MetricWidget({ id, title, type, description, data, loading, isDragging, isOver, isOverlay, onRemove }: MetricWidgetProps) {
+// REMOVED: isDragging and isOver from the destructuring to fix unused variable warnings
+export function MetricWidget({ id, title, type, description, data, loading, isOverlay, onRemove }: MetricWidgetProps) {
   
+  const [moversTF, setMoversTF] = useState("1D");
+
   const getMetricColor = () => {
-    if (loading || !data || type === "holdings") return "text-white";
+    if (loading || !data || type === "holdings" || type === "sectors" || type === "movers") return "text-white";
+    
     const val = typeof data === "number" ? data : parseFloat(String(data).replace(/[%,$]/g, ""));
-    if (type.includes("pnl") || type === "alpha") {
-      return val > 0 ? "text-emerald-400" : val < 0 ? "text-rose-400" : "text-white";
+    
+    if (type.includes("pnl")) {
+      return val > 0 ? "text-emerald-400" : val < 0 ? "text-rose-500" : "text-white";
     }
+
+    if (type === "sharpe" || type === "sortino") {
+      if (val >= 2.0) return "text-emerald-400";
+      if (val >= 1.0) return "text-emerald-300";
+      if (val >= 0.5) return "text-white";
+      if (val >= 0.0) return "text-rose-300";
+      return "text-rose-500";
+    }
+
+    if (type === "beta") {
+      if (val > 1.5) return "text-rose-500";
+      if (val > 1.2) return "text-rose-300";
+      if (val >= 0.8) return "text-white";
+      if (val >= 0.0) return "text-emerald-300";
+      return "text-emerald-400";
+    }
+
+    if (type === "max_drawdown" || type === "var" || type === "ulcer_index") {
+      if (val <= -0.2) return "text-rose-500";
+      if (val <= -0.1) return "text-rose-300";
+      if (val <= -0.05) return "text-white";
+      return "text-emerald-300";
+    }
+
+    if (type === "calmar") {
+      if (val >= 3.0) return "text-emerald-400";
+      if (val >= 1.0) return "text-white";
+      return "text-rose-400";
+    }
+
+    if (type === "diversification") {
+      if (val >= 1.5) return "text-emerald-400";
+      if (val >= 1.1) return "text-emerald-300";
+      if (val >= 0.9) return "text-white";
+      return "text-rose-400";
+    }
+
     return "text-white";
   };
 
   const renderContent = () => {
     if (loading) return <Loader2 className="h-5 w-5 animate-spin text-zinc-600" />;
-    if (!data && data !== 0) return <p className="text-zinc-700 text-[10px] uppercase tracking-widest text-center">Connect Wallet</p>;
+    
+    // FIXED: Replaced 'any' with explicit Record type check
+    const moversRecord = data as Record<string, T.MoverItem[]>;
+    const hasData = type === "movers" ? (moversRecord?.[moversTF]?.length > 0) : !!data || data === 0;
+    
+    if (!hasData) return <p className="text-zinc-700 text-[10px] uppercase tracking-widest text-center">Connect Wallet</p>;
+
+    if (type === "movers" && data && typeof data === 'object' && !Array.isArray(data)) {
+      const tfData = (data as Record<string, T.MoverItem[]>)[moversTF] || [];
+      
+      return (
+        <div className="w-full h-full overflow-y-auto custom-scrollbar pt-1 px-1">
+          <div className="space-y-2">
+            {tfData.map((item, i) => (
+              <div key={`${item.ticker}-${i}`} className="flex justify-between items-center text-[12px] border-b border-zinc-800/50 pb-2 last:border-0">
+                <span className="font-bold text-white uppercase">{item.ticker}</span>
+                <span className={cn("font-mono font-bold", item.value > 0 ? "text-emerald-400" : "text-rose-500")}>
+                  {item.value > 0 ? "+" : ""}{(item.value * 100).toFixed(2)}%
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
 
     if (type === "holdings" && Array.isArray(data)) {
       return (
@@ -51,11 +117,35 @@ export function MetricWidget({ id, title, type, description, data, loading, isDr
       );
     }
 
+    if (type === "sectors" && data && typeof data === 'object' && !Array.isArray(data)) {
+      const sectors = Object.entries(data as T.SectorWeights).sort((a, b) => b[1] - a[1]);
+      
+      return (
+        <div className="w-full h-full overflow-y-auto custom-scrollbar pt-1 px-1">
+          <div className="space-y-3">
+            {sectors.map(([sector, weight]) => (
+              <div key={sector} className="w-full">
+                <div className="flex justify-between text-[10px] uppercase tracking-wider mb-1.5">
+                  <span className="text-zinc-400 truncate pr-2">{sector}</span>
+                  <span className="text-white font-mono">{weight.toFixed(1)}%</span>
+                </div>
+                <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-indigo-500 rounded-full" 
+                    style={{ width: `${Math.min(weight, 100)}%` }} 
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="text-center animate-in fade-in duration-500 w-full px-2">
         <span className={cn(
-          // AUTO-SIZE LOGIC: Uses container query units to scale font based on box width
-          "font-mono font-bold tracking-tighter block leading-none text-[clamp(1.5rem,15cqw,3.5rem)]", 
+          "font-mono font-bold tracking-tighter block leading-none text-[clamp(1.5rem,15cqw,3.5rem)] transition-colors duration-500", 
           getMetricColor()
         )}>
           {formatMetric(data as string | number, type)}
@@ -64,21 +154,28 @@ export function MetricWidget({ id, title, type, description, data, loading, isDr
     );
   };
 
-  if (isDragging) return (
-    <div className={cn("h-full w-full rounded-xl border-2 border-dashed transition-colors", 
-      isOver ? "border-zinc-500 bg-zinc-900/40" : "border-zinc-800 bg-zinc-900/20"
-    )} />
-  );
-
   return (
     <div className={cn(
-      // CURSOR FIX: Forced cursor-pointer here
       "bg-[#121214] text-white rounded-xl border border-zinc-800 p-5 group flex flex-col h-full relative overflow-hidden @container cursor-pointer", 
       isOverlay && "border-zinc-400 shadow-2xl scale-[1.02] pointer-events-none"
     )}>
       <div className="flex justify-between items-start z-20 shrink-0">
         <h3 className="text-[10px] font-bold uppercase text-zinc-500 tracking-widest">{title}</h3>
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          
+          {type === "movers" && (
+            <select 
+              value={moversTF} 
+              onChange={(e) => setMoversTF(e.target.value)}
+              className="bg-zinc-900 text-[9px] font-bold text-zinc-400 uppercase rounded border border-zinc-800 px-1 py-0.5 outline-none hover:text-white transition-colors"
+              onPointerDown={e => e.stopPropagation()}
+            >
+              {["1D", "1W", "1M", "6M", "1Y", "10Y"].map(tf => (
+                <option key={tf} value={tf}>{tf}</option>
+              ))}
+            </select>
+          )}
+
           {!isOverlay && (
             <>
               <Tooltip>
