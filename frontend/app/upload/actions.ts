@@ -1,34 +1,26 @@
 "use server";
 
-import { createServerClient, type CookieOptions } from "@supabase/ssr";
-import { cookies } from "next/headers";
+import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 
+// --- Types ---
 interface Holding {
   symbol: string;
+  description: string; // Included to fix the blank name bug
   quantity: number;
   avgCost: number;
 }
 
+/**
+ * Saves a new portfolio and its associated items.
+ */
 export async function savePortfolio(name: string, holdings: Holding[]) {
-  const cookieStore = await cookies();
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) { return cookieStore.get(name)?.value; },
-        set(name: string, value: string, options: CookieOptions) { cookieStore.set({ name, value, ...options }); },
-        remove(name: string, options: CookieOptions) { cookieStore.delete({ name, ...options }); },
-      },
-    }
-  );
+  const supabase = await createClient();
 
-  // 1. Get the current user
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("User must be logged in to save a wallet");
 
-  // 2. Insert the main Portfolio record
+  // 1. Insert main Portfolio record
   const { data: portfolio, error: pError } = await supabase
     .from("portfolios")
     .insert([{ name, user_id: user.id }])
@@ -37,10 +29,11 @@ export async function savePortfolio(name: string, holdings: Holding[]) {
 
   if (pError) throw pError;
 
-  // 3. Prepare and insert the individual assets (linked to the portfolio ID)
+  // 2. Insert items including the description field
   const itemsToInsert = holdings.map((item) => ({
     portfolio_id: portfolio.id,
     symbol: item.symbol,
+    description: item.description,
     quantity: item.quantity,
     avg_cost: item.avgCost,
   }));
@@ -48,27 +41,19 @@ export async function savePortfolio(name: string, holdings: Holding[]) {
   const { error: iError } = await supabase.from("portfolio_items").insert(itemsToInsert);
   if (iError) throw iError;
 
-  // 4. Refresh the cache so the user sees their new wallet immediately
   revalidatePath("/dashboard");
+  revalidatePath("/upload");
   return { success: true, portfolioId: portfolio.id };
 }
 
+/**
+ * Fetches the most recently created portfolio for the user.
+ */
 export async function getLatestPortfolio() {
-  const cookieStore = await cookies();
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) { return cookieStore.get(name)?.value; },
-      },
-    }
-  );
-
+  const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
 
-  // Fetch the most recent portfolio and its items
   const { data, error } = await supabase
     .from("portfolios")
     .select(`
@@ -76,6 +61,7 @@ export async function getLatestPortfolio() {
       name,
       portfolio_items (
         symbol,
+        description,
         quantity,
         avg_cost
       )
@@ -86,22 +72,14 @@ export async function getLatestPortfolio() {
     .single();
 
   if (error || !data) return null;
-
   return data;
 }
 
+/**
+ * Fetches all wallet names and IDs for the selector.
+ */
 export async function getAllWallets() {
-  const cookieStore = await cookies();
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) { return cookieStore.get(name)?.value; },
-      },
-    }
-  );
-
+  const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return [];
 
@@ -111,21 +89,14 @@ export async function getAllWallets() {
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
 
-  if (error) return [];
-  return data;
+  return error ? [] : data;
 }
 
+/**
+ * Fetches a specific portfolio by its UUID.
+ */
 export async function getPortfolioById(id: string) {
-  const cookieStore = await cookies();
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) { return cookieStore.get(name)?.value; },
-      },
-    }
-  );
+  const supabase = await createClient();
 
   const { data, error } = await supabase
     .from("portfolios")
@@ -134,6 +105,7 @@ export async function getPortfolioById(id: string) {
       name,
       portfolio_items (
         symbol,
+        description,
         quantity,
         avg_cost
       )
@@ -145,25 +117,15 @@ export async function getPortfolioById(id: string) {
   return data;
 }
 
+/**
+ * Deletes a portfolio (Cascade handles the items).
+ */
 export async function deletePortfolio(id: string) {
-  const cookieStore = await cookies();
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) { return cookieStore.get(name)?.value; },
-        set(name: string, value: string, options: CookieOptions) { cookieStore.set({ name, value, ...options }); },
-        remove(name: string, options: CookieOptions) { cookieStore.delete({ name, ...options }); },
-      },
-    }
-  );
+  const supabase = await createClient();
 
-  // Because of 'ON DELETE CASCADE' in our SQL, deleting the portfolio 
-  // automatically deletes all its items!
   const { error } = await supabase.from("portfolios").delete().eq("id", id);
-  
   if (error) throw error;
+
   revalidatePath("/upload");
   return { success: true };
 }

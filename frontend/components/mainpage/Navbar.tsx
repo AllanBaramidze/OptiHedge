@@ -69,7 +69,7 @@ export default async function Navbar() {
             <div className="hidden md:flex items-center gap-6 text-sm font-medium text-white/60">
               <Link href="/upload" className="hover:text-white transition-colors">Wallets</Link>
               <Link href="/dashboard" className="hover:text-white transition-colors">Dashboard</Link>
-              <Link href="/risk" className="hover:text-white transition-colors">Hedging</Link>
+              <Link href="/hedge" className="hover:text-white transition-colors">Hedging</Link>
             </div>
           )}
         </div>

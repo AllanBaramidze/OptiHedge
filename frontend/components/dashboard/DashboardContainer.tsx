@@ -28,6 +28,7 @@ const ALL_AVAILABLE_WIDGETS: Omit<T.WidgetData, "id">[] = [
   { size: "small", title: "Sharpe Ratio", type: "sharpe", description: "Risk-adjusted return vs volatility." },
   { size: "small", title: "Portfolio Beta", type: "beta", description: "Sensitivity relative to S&P 500." },
   { size: "small", title: "Holdings List", type: "holdings", description: "Vertical list of all active assets." },
+  // add sector exposure, 
 ];
 
 const INITIAL_LAYOUT: T.WidgetData[] = [
