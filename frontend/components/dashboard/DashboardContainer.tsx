@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useSyncExternalStore, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useSyncExternalStore, useCallback, useMemo } from "react";
 import { 
   DndContext, 
   closestCenter, 
@@ -21,6 +21,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { getPortfolioById } from "@/app/upload/actions";
 import { cn } from "@/lib/utils";
 import * as T from "@/types/dashboard";
+
+const STORAGE_KEY = "optihedge_layout_v1";
 
 const ALL_AVAILABLE_WIDGETS: Omit<T.WidgetData, "id">[] = [
   // Core Metrics
@@ -59,6 +61,25 @@ export default function DashboardContainer() {
   const [analysisData, setAnalysisData] = useState<T.AnalysisResponse | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
+  // 1. Load layout from local storage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      try {
+        setWidgets(JSON.parse(saved));
+      } catch (e) {
+        console.error("Failed to load saved layout", e);
+      }
+    }
+  }, []);
+
+  // 2. Save layout whenever widgets change
+  useEffect(() => {
+    if (widgets.length > 0) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(widgets));
+    }
+  }, [widgets]);
+
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
   const activeWidget = useMemo(() => widgets.find((w) => w.id === activeId), [activeId, widgets]);
@@ -93,6 +114,13 @@ export default function DashboardContainer() {
     setActiveId(null);
   };
 
+  const resetLayout = () => {
+    if (confirm("Reset dashboard to default layout?")) {
+      setWidgets(INITIAL_LAYOUT);
+      localStorage.removeItem(STORAGE_KEY);
+    }
+  };
+
   if (!isClient) return null;
 
   return (
@@ -103,7 +131,13 @@ export default function DashboardContainer() {
             <h1 className="text-4xl font-bold text-white tracking-tight">Dashboard</h1>
             <p className="text-white/40 mt-1">Real-time risk analytics engine.</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
+            <button 
+                onClick={resetLayout}
+                className="text-[10px] uppercase font-bold text-zinc-600 hover:text-rose-400 transition-colors tracking-widest"
+            >
+                Reset Layout
+            </button>
             <WalletSelector onWalletChange={handleWalletChange} />
             <WidgetSearch 
               available={ALL_AVAILABLE_WIDGETS} 
@@ -143,9 +177,10 @@ export default function DashboardContainer() {
           <DragOverlay>
             {activeWidget && (
               <div className={cn(
-                activeWidget.size === "large" ? "w-160 h-86" :
-                activeWidget.size === "medium" ? "w-156" : "w-75", 
-                (activeWidget.type === "holdings" || activeWidget.type === "sectors") && "h-86"
+                "transition-transform duration-200",
+                activeWidget.size === "large" ? "w-164 h-86" :
+                activeWidget.size === "medium" ? "w-164 h-40" : "w-79 h-40", 
+                (activeWidget.type === "holdings" || activeWidget.type === "sectors") && activeWidget.size !== "large" && "h-86"
               )}>
                 <MetricWidget 
                   {...activeWidget} 
