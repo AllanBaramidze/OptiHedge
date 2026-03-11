@@ -43,3 +43,62 @@ export function formatMetric(
   // 6. Raw Float Formatting (Sharpe, Beta, Sortino, Calmar, Skewness, Kurtosis, etc.)
   return num.toFixed(2);
 }
+
+/**
+ * Determines the Tailwind text color class based on the metric type and value.
+ * Matches institutional risk standards (Sharpe, Beta, Max DD, etc.)
+ */
+export function getMetricColor(value: number | string | null | undefined, type: string): string {
+  if (value === null || value === undefined) return "text-white";
+  
+  // Convert to number for comparison
+  const val = typeof value === "number" 
+    ? value 
+    : parseFloat(String(value).replace(/[%,$]/g, ""));
+
+  if (isNaN(val)) return "text-white";
+
+  // 1. PnL Logic
+  if (type.includes("pnl")) {
+    return val > 0 ? "text-emerald-400" : val < 0 ? "text-rose-500" : "text-white";
+  }
+
+  // 2. Risk-Adjusted Return (Sharpe/Sortino)
+  if (type === "sharpe" || type === "sortino") {
+    if (val >= 2.0) return "text-emerald-400";
+    if (val >= 1.0) return "text-emerald-300";
+    if (val >= 0.5) return "text-white";
+    return val >= 0.0 ? "text-rose-300" : "text-rose-500";
+  }
+
+  // 3. Volatility / Sensitivity (Beta)
+  if (type === "beta") {
+    if (val > 1.5) return "text-rose-500";
+    if (val > 1.2) return "text-rose-300";
+    if (val >= 0.8) return "text-white";
+    return val >= 0.0 ? "text-emerald-300" : "text-emerald-400";
+  }
+
+  // 4. Downside Risk (Drawdown, VaR, Ulcer)
+  if (type === "max_drawdown" || type === "var" || type === "ulcer_index") {
+    const absVal = Math.abs(val); // Handle both -0.2 and 0.2 logic
+    if (absVal >= 0.2) return "text-rose-500";
+    if (absVal >= 0.1) return "text-rose-300";
+    if (absVal >= 0.05) return "text-white";
+    return "text-emerald-300";
+  }
+
+  // 5. Efficiency & Diversification
+  if (type === "calmar") {
+    if (val >= 3.0) return "text-emerald-400";
+    return val >= 1.0 ? "text-white" : "text-rose-400";
+  }
+
+  if (type === "diversification") {
+    if (val >= 1.5) return "text-emerald-400";
+    if (val >= 1.1) return "text-emerald-300";
+    return val >= 0.9 ? "text-white" : "text-rose-400";
+  }
+
+  return "text-white";
+}
