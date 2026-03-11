@@ -6,9 +6,13 @@ import { revalidatePath } from "next/cache";
 // --- Types ---
 interface Holding {
   symbol: string;
-  description: string; // Included to fix the blank name bug
+  description: string;
   quantity: number;
   avgCost: number;
+  asset_type: 'STOCK' | 'OPTION'; 
+  option_type?: 'CALL' | 'PUT';   
+  strike?: number;                
+  expiry?: string;                
 }
 
 /**
@@ -29,13 +33,18 @@ export async function savePortfolio(name: string, holdings: Holding[]) {
 
   if (pError) throw pError;
 
-  // 2. Insert items including the description field
+  // 2. Map items correctly to include new Option fields
   const itemsToInsert = holdings.map((item) => ({
     portfolio_id: portfolio.id,
     symbol: item.symbol,
     description: item.description,
     quantity: item.quantity,
     avg_cost: item.avgCost,
+    // --- NEW FIELDS ADDED HERE ---
+    asset_type: item.asset_type,
+    option_type: item.option_type || null,
+    strike: item.strike || null,
+    expiry: item.expiry || null,
   }));
 
   const { error: iError } = await supabase.from("portfolio_items").insert(itemsToInsert);
@@ -63,7 +72,11 @@ export async function getLatestPortfolio() {
         symbol,
         description,
         quantity,
-        avg_cost
+        avg_cost,
+        asset_type,
+        option_type,
+        strike,
+        expiry
       )
     `)
     .eq("user_id", user.id)
@@ -74,6 +87,36 @@ export async function getLatestPortfolio() {
   if (error || !data) return null;
   return data;
 }
+
+/**
+ * Fetches a specific portfolio by its UUID.
+ */
+export async function getPortfolioById(id: string) {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("portfolios")
+    .select(`
+      id,
+      name,
+      portfolio_items (
+        symbol,
+        description,
+        quantity,
+        avg_cost,
+        asset_type,
+        option_type,
+        strike,
+        expiry
+      )
+    `)
+    .eq("id", id)
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
 
 /**
  * Fetches all wallet names and IDs for the selector.
@@ -92,30 +135,6 @@ export async function getAllWallets() {
   return error ? [] : data;
 }
 
-/**
- * Fetches a specific portfolio by its UUID.
- */
-export async function getPortfolioById(id: string) {
-  const supabase = await createClient();
-
-  const { data, error } = await supabase
-    .from("portfolios")
-    .select(`
-      id,
-      name,
-      portfolio_items (
-        symbol,
-        description,
-        quantity,
-        avg_cost
-      )
-    `)
-    .eq("id", id)
-    .single();
-
-  if (error) throw error;
-  return data;
-}
 
 /**
  * Deletes a portfolio (Cascade handles the items).

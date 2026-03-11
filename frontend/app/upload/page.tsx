@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { X, Loader2, Save, CheckCircle2, ArrowRight, Trash2, LayoutDashboard } from "lucide-react";
+import { X, Loader2, Save, ArrowRight, Trash2, LayoutDashboard } from "lucide-react";
 import debounce from "lodash.debounce";
 import { savePortfolio, getLatestPortfolio, getAllWallets, getPortfolioById, deletePortfolio } from "./actions"; 
 
@@ -18,18 +18,26 @@ interface StockSuggestion {
   description: string;
 }
 
+interface DbPortfolioItem {
+  symbol: string;
+  description?: string;
+  quantity: number;
+  avg_cost: number; // Matches Supabase snake_case
+  asset_type?: 'STOCK' | 'OPTION';
+  option_type?: 'CALL' | 'PUT';
+  strike?: number;
+  expiry?: string;
+}
+
 interface PortfolioItem {
   symbol: string;
   description: string;
   quantity: number;
   avgCost: number;
-}
-
-interface DBPortfolioItem {
-  symbol: string;
-  description?: string;
-  quantity: number;
-  avg_cost: number;
+  asset_type: 'STOCK' | 'OPTION';
+  option_type?: 'CALL' | 'PUT';
+  strike?: number;
+  expiry?: string;
 }
 
 interface Wallet {
@@ -42,23 +50,28 @@ const formatCurrency = (value: number) =>
 
 export default function PortfolioBuilder() {
   const router = useRouter();
-  // --- State ---
+  
+  // Search & Basic State
   const [searchTerm, setSearchTerm] = useState("");
   const [suggestions, setSuggestions] = useState<StockSuggestion[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   
-  // Wallet Selection State
+  // Wallet Selection
   const [walletName, setWalletName] = useState("My New Portfolio");
   const [allWallets, setAllWallets] = useState<Wallet[]>([]);
   const [currentWalletId, setCurrentWalletId] = useState<string | null>(null);
-  
   const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
+
+  // Form State
   const [selectedStock, setSelectedStock] = useState<StockSuggestion | null>(null);
-  
+  const [assetType, setAssetType] = useState<'STOCK' | 'OPTION'>('STOCK');
+  const [optionType, setOptionType] = useState<'CALL' | 'PUT'>('CALL');
   const [quantity, setQuantity] = useState<string>("");
   const [avgCost, setAvgCost] = useState<string>("");
+  const [strike, setStrike] = useState<string>("");
+  const [expiry, setExpiry] = useState<string>("");
 
   // --- API Search Logic ---
   const fetchSuggestions = useMemo(
@@ -68,83 +81,74 @@ export default function PortfolioBuilder() {
           setSuggestions([]);
           return;
         }
-        setLoading(true);
+        setIsSearching(true);
         try {
           const apiKey = process.env.NEXT_PUBLIC_FINNHUB_API_KEY;
           const res = await fetch(`https://finnhub.io/api/v1/search?q=${encodeURIComponent(term)}&token=${apiKey}`);
           const data = await res.json();
           const validResults = (data.result || [])
             .filter((item: StockSuggestion) => item.symbol && !item.symbol.includes('.'))
-            .filter((item: StockSuggestion, index: number, self: StockSuggestion[]) => 
-              index === self.findIndex((t) => t.symbol === item.symbol)
-            ).slice(0, 8);
+            .slice(0, 8);
           setSuggestions(validResults);
-        } catch (err) {
-          console.error("Stock search failed:", err);
-        } finally {
-          setLoading(false);
-        }
+        } catch (err) { console.error(err); } finally { setIsSearching(false); }
       }, 400),
     []
   );
 
   useEffect(() => {
-    if (!selectedStock) {
-      fetchSuggestions(searchTerm);
-    }
-    return () => {
-      fetchSuggestions.cancel();
-    };
+    if (!selectedStock) fetchSuggestions(searchTerm);
+    return () => fetchSuggestions.cancel();
   }, [searchTerm, selectedStock, fetchSuggestions]);
 
-  // LOAD ALL WALLETS AND LATEST ON MOUNT
+  // Unified data mapper for DB -> State
+  const mapDbToState = (items: DbPortfolioItem[]): PortfolioItem[] => {
+    return items.map((item) => ({
+      symbol: item.symbol,
+      description: item.description || "",
+      quantity: item.quantity,
+      avgCost: item.avg_cost, // Map snake_case to camelCase
+      asset_type: item.asset_type || 'STOCK',
+      option_type: item.option_type,
+      strike: item.strike,
+      expiry: item.expiry,
+    }));
+  };
+
   useEffect(() => {
     const init = async () => {
       const wallets = await getAllWallets();
       setAllWallets(wallets);
-
       const latest = await getLatestPortfolio();
-      if (latest && latest.portfolio_items) {
-        const formattedItems = latest.portfolio_items.map((item: DBPortfolioItem) => ({
-          symbol: item.symbol,
-          description: item.description || "", 
-          quantity: item.quantity,
-          avgCost: item.avg_cost,
-        }));
-        
-        setPortfolio(formattedItems);
+      if (latest) {
+        setPortfolio(mapDbToState(latest.portfolio_items));
         setWalletName(latest.name);
         setCurrentWalletId(latest.id);
       }
     };
-
     init();
   }, []);
 
   // --- Handlers ---
-  const handleSelectWallet = async (id: string) => {
-    try {
-      const data = await getPortfolioById(id);
-      if (data && data.portfolio_items) {
-        const formattedItems = data.portfolio_items.map((item: DBPortfolioItem) => ({
-          symbol: item.symbol,
-          description: item.description || "",
-          quantity: item.quantity,
-          avgCost: item.avg_cost,
-        }));
-        setPortfolio(formattedItems);
-        setWalletName(data.name);
-        setCurrentWalletId(data.id);
-      }
-    } catch (err) {
-      console.error("Failed to fetch wallet:", err);
-    }
-  };
+  const handleAddToPortfolio = () => {
+    const qty = Number(quantity);
+    const cost = Number(avgCost);
+    if (!selectedStock || isNaN(qty) || qty <= 0 || isNaN(cost) || cost <= 0) return;
 
-  const handleSelectStock = (stock: StockSuggestion) => {
-    setSelectedStock(stock);
-    setSearchTerm(`${stock.symbol} - ${stock.description}`);
-    setSuggestions([]);
+    const newItem: PortfolioItem = {
+      symbol: selectedStock.symbol,
+      description: selectedStock.description,
+      quantity: qty,
+      avgCost: cost,
+      asset_type: assetType,
+      ...(assetType === 'OPTION' && { 
+        option_type: optionType, 
+        strike: Number(strike), 
+        expiry 
+      })
+    };
+
+    setPortfolio((prev) => [...prev, newItem]);
+    clearSelection();
   };
 
   const clearSelection = () => {
@@ -152,27 +156,9 @@ export default function PortfolioBuilder() {
     setSearchTerm("");
     setQuantity("");
     setAvgCost("");
-  };
-
-  const handleAddToPortfolio = () => {
-    const qty = Number(quantity);
-    const cost = Number(avgCost);
-    if (!selectedStock || isNaN(qty) || qty <= 0 || isNaN(cost) || cost <= 0) return;
-
-    setPortfolio((prev) => [
-      ...prev,
-      {
-        symbol: selectedStock.symbol,
-        description: selectedStock.description,
-        quantity: qty,
-        avgCost: cost,
-      },
-    ]);
-    clearSelection();
-  };
-
-  const handleRemoveItem = (symbol: string) => {
-    setPortfolio((prev) => prev.filter((item) => item.symbol !== symbol));
+    setStrike("");
+    setExpiry("");
+    setAssetType('STOCK');
   };
 
   const handleSaveToDatabase = async () => {
@@ -181,260 +167,184 @@ export default function PortfolioBuilder() {
     try {
       const result = await savePortfolio(walletName, portfolio);
       if (result.success) {
-        const updatedWallets = await getAllWallets();
-        setAllWallets(updatedWallets);
-        setCurrentWalletId(result.portfolioId); // Set the new ID
-        alert(`Successfully saved "${walletName}"!`);
+        setAllWallets(await getAllWallets());
+        setCurrentWalletId(result.portfolioId);
+        alert(`Saved "${walletName}"`);
       }
-    } catch (err) {
-      console.error("Save failed:", err);
-    } finally {
-      setIsSaving(false);
+    } catch (err) { console.error(err); } finally { setIsSaving(false); }
+  };
+
+  const handleSelectWallet = async (id: string) => {
+    const data = await getPortfolioById(id);
+    if (data) {
+      setPortfolio(mapDbToState(data.portfolio_items));
+      setWalletName(data.name);
+      setCurrentWalletId(data.id);
     }
   };
 
   const handleDeleteWallet = async () => {
-  if (!currentWalletId || !confirm(`Delete "${walletName}"? This cannot be undone.`)) return;
-  
-  try {
+    if (!currentWalletId || !confirm(`Delete "${walletName}"?`)) return;
     await deletePortfolio(currentWalletId);
-    
-    // 1. Fetch the updated list of wallets first
-    const updatedWallets = await getAllWallets();
-    setAllWallets(updatedWallets);
-
-    if (updatedWallets.length > 0) {
-      // 2. If there are wallets left, pick the first one and load it
-      const nextWallet = updatedWallets[0];
-      handleSelectWallet(nextWallet.id);
-    } else {
-      // 3. Only if everything is gone, reset to the empty state
-      setPortfolio([]);
-      setWalletName("My New Portfolio");
-      setCurrentWalletId(null);
-    }
-    
-    alert("Wallet deleted successfully.");
-  } catch (err) {
-    console.error("Delete failed:", err);
-    alert("Could not delete the wallet. Please try again.");
-  }
-};
-
-  const handleSubmitAnalysis = async () => {
-  if (portfolio.length === 0) return;
-  setIsSubmitting(true);
-  
-  try {
-    // if new wallet, save it first for the ID
-    let targetId = currentWalletId;
-
-    if (!targetId) {
-      const result = await savePortfolio(walletName, portfolio);
-      targetId = result.portfolioId;
-    }
-    // Navigate with the ID as a query param
-    router.push(`/hedge?id=${targetId}`);
-  }
-  catch (err) {
-    console.error("Navigation failed:", err);
-  } finally {
-    setIsSubmitting(false);
-  }
+    const updated = await getAllWallets();
+    setAllWallets(updated);
+    if (updated.length > 0) handleSelectWallet(updated[0].id);
+    else { setPortfolio([]); setWalletName("My New Portfolio"); setCurrentWalletId(null); }
   };
 
-  const isAddDisabled = !selectedStock || !quantity || !avgCost || Number(quantity) <= 0 || Number(avgCost) <= 0;
-  const totalPortfolioValue = portfolio.reduce((sum, item) => sum + item.quantity * item.avgCost, 0);
+  const handleSubmitAnalysis = () => {
+    if (portfolio.length === 0) return;
+    setIsSubmitting(true);
+    router.push(`/hedge?id=${currentWalletId}`);
+  };
+
+  const totalPortfolioValue = portfolio.reduce((sum, item) => {
+      const multiplier = item.asset_type === 'OPTION' ? 100 : 1;
+      return sum + (item.quantity * item.avgCost * multiplier);
+  }, 0);
 
   return (
-  <main className="pt-24 px-6 md:px-10 space-y-8 pb-20">
-    {/* SEARCH & ADD CARD */}
-    <Card className="max-w-4xl mx-auto shadow-sm">
-      <CardHeader>
-        <CardTitle className="text-2xl">Build Your Portfolio</CardTitle>
-        <CardDescription>Search for an asset and add it to your wallet.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
-          <div className="md:col-span-5 relative">
-            <Input
-              placeholder="Search ticker (e.g. AAPL)"
-              value={searchTerm}
-              onChange={(e) => {
-                setSearchTerm(e.target.value);
-                if (selectedStock) setSelectedStock(null);
-              }}
-              className={selectedStock ? "pr-10 border-primary bg-primary/5" : ""}
-            />
-            {selectedStock && (
-              <button onClick={clearSelection} className="absolute right-3 top-2.5 text-muted-foreground hover:text-foreground">
-                <X className="h-4 w-4" />
-              </button>
-            )}
-            {loading && !selectedStock && (
-              <Loader2 className="absolute right-3 top-2.5 h-4 w-4 animate-spin text-muted-foreground" />
-            )}
-            {suggestions.length > 0 && (
-              <div className="absolute z-50 w-full mt-1 bg-background border rounded-md shadow-lg">
-                {suggestions.map((s, i) => (
-                  <div key={i} className="px-4 py-3 hover:bg-accent cursor-pointer border-b" onClick={() => handleSelectStock(s)}>
-                    <div className="font-semibold">{s.symbol}</div>
-                    <div className="text-xs text-muted-foreground">{s.description}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          <Input 
-            className="md:col-span-2" 
-            type="number" 
-            placeholder="Qty" 
-            value={quantity} 
-            onChange={(e) => setQuantity(e.target.value)} 
-            disabled={!selectedStock} 
-          />
-          <Input 
-            className="md:col-span-2" 
-            type="number" 
-            placeholder="Avg Cost" 
-            value={avgCost} 
-            onChange={(e) => setAvgCost(e.target.value)} 
-            disabled={!selectedStock} 
-          />
-          <Button className="md:col-span-3 w-full" onClick={handleAddToPortfolio} disabled={isAddDisabled}>
-            {selectedStock ? <CheckCircle2 className="w-4 h-4 mr-2" /> : null}
-            Add Position
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+    <main className="pt-24 px-6 md:px-10 space-y-8 pb-20 max-w-6xl mx-auto">
+      <Card className="shadow-sm border-white/5 bg-zinc-900/10">
+        <CardHeader>
+          <CardTitle>Asset Configurator</CardTitle>
+          <CardDescription>Add stocks or options to your hedge strategy.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+            <div className="md:col-span-4 relative">
+              <Input
+                placeholder="Search Ticker..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className={selectedStock ? "border-emerald-500/50 bg-emerald-500/5" : ""}
+              />
+              {isSearching && <Loader2 className="absolute right-3 top-3 w-4 h-4 animate-spin text-zinc-500" />}
+              {suggestions.length > 0 && !selectedStock && (
+                <div className="absolute z-50 w-full mt-1 bg-zinc-900 border border-white/10 rounded-md shadow-xl overflow-hidden">
+                  {suggestions.map((s, i) => (
+                    <div key={i} className="px-4 py-2 hover:bg-white/5 cursor-pointer border-b border-white/5" onClick={() => {setSelectedStock(s); setSearchTerm(s.symbol)}}>
+                      <div className="font-bold text-sm text-white">{s.symbol}</div>
+                      <div className="text-[10px] text-zinc-500 truncate">{s.description}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
-    {/* WALLET DISPLAY CARD */}
-    {(portfolio.length > 0 || currentWalletId) ? (
-      <Card className="max-w-4xl mx-auto shadow-sm">
-        <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between space-y-4 md:space-y-0 pb-6 border-b border-border/50">
-          <div>
-            <CardTitle>Your Wallet</CardTitle>
-            <CardDescription>Construct and manage your portfolios.</CardDescription>
-          </div>
-          
-          <div className="flex flex-wrap items-center gap-3">
-            <Select onValueChange={handleSelectWallet} value={currentWalletId || undefined}>
-              <SelectTrigger className="w-45 h-9 bg-background">
-                <SelectValue placeholder="Switch Wallet" />
+            <Select value={assetType} onValueChange={(v: 'STOCK' | 'OPTION') => setAssetType(v)}>
+              <SelectTrigger className="md:col-span-2">
+                <SelectValue placeholder="Type" />
               </SelectTrigger>
               <SelectContent>
-                {allWallets.map((w) => (
-                  <SelectItem key={w.id} value={w.id}>
-                    {w.name}
-                  </SelectItem>
-                ))}
+                <SelectItem value="STOCK">Equity</SelectItem>
+                <SelectItem value="OPTION">Option</SelectItem>
               </SelectContent>
             </Select>
 
-            <Input 
-              className="w-48 h-9" 
-              value={walletName} 
-              onChange={(e) => setWalletName(e.target.value)} 
-              placeholder="Wallet Name"
-            />
-            
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={handleSaveToDatabase} disabled={isSaving}>
-                {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
-                Save
-              </Button>
+            <Input className="md:col-span-2" type="number" placeholder="Qty" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+            <Input className="md:col-span-2" type="number" placeholder="Avg Cost" value={avgCost} onChange={(e) => setAvgCost(e.target.value)} />
 
-              {currentWalletId && (
-                <Button variant="destructive" size="icon" className="h-9 w-9" onClick={handleDeleteWallet}>
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              )}
-            </div>
-          </div>
-        </CardHeader>
-
-        <CardContent className="pt-6">
-          {portfolio.length > 0 ? (
-            <div className="border rounded-md">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Symbol</TableHead>
-                    <TableHead>Asset Name</TableHead>
-                    <TableHead className="text-right">Quantity</TableHead>
-                    <TableHead className="text-right">Avg Cost</TableHead>
-                    <TableHead className="text-right">Total Value</TableHead>
-                    <TableHead className="w-12"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {portfolio.map((item) => (
-                    <TableRow key={item.symbol}>
-                      <TableCell className="font-medium">{item.symbol}</TableCell>
-                      <TableCell className="max-w-50 truncate">{item.description}</TableCell>
-                      <TableCell className="text-right">{item.quantity}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(item.avgCost)}</TableCell>
-                      <TableCell className="text-right font-medium">{formatCurrency(item.quantity * item.avgCost)}</TableCell>
-                      <TableCell>
-                        <Button variant="ghost" size="icon" onClick={() => handleRemoveItem(item.symbol)}>
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-                <TableFooter>
-                  <TableRow className="bg-muted/50 font-bold">
-                    <TableCell colSpan={4} className="text-right">Total:</TableCell>
-                    <TableCell className="text-right text-primary font-mono">{formatCurrency(totalPortfolioValue)}</TableCell>
-                    <TableCell />
-                  </TableRow>
-                </TableFooter>
-              </Table>
-            </div>
-          ) : (
-            <div className="py-20 text-center border-2 border-dashed rounded-lg bg-muted/5 border-muted/20">
-              <p className="text-sm italic text-muted-foreground">
-                This wallet is currently empty. Add positions above to begin.
-              </p>
-            </div>
-          )}
-
-          {/* ACTION BUTTONS SECTION */}
-          <div className="mt-8 flex flex-col sm:flex-row gap-4">
-            <Link href="/dashboard" className="flex-1">
-              <Button 
-                variant="secondary" 
-                size="lg" 
-                className="w-full bg-zinc-800 hover:bg-zinc-700 text-white border border-white/5 shadow-md"
-              >
-                <LayoutDashboard className="mr-2 h-4 w-4" />
-                Go to Dashboard
-              </Button>
-            </Link>
-
-            <Button 
-              onClick={handleSubmitAnalysis} 
-              disabled={isSubmitting || portfolio.length === 0} 
-              size="lg" 
-              className="flex-1 shadow-lg shadow-primary/10"
-            >
-              {isSubmitting ? (
-                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Redirecting...</>
-              ) : (
-                <>Run OptiHedge Analysis <ArrowRight className="ml-2 h-4 w-4" /></>
-              )}
+            <Button className="md:col-span-2" onClick={handleAddToPortfolio} disabled={!selectedStock || !quantity}>
+              Add Position
             </Button>
           </div>
+
+          {assetType === 'OPTION' && (
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 rounded-xl bg-blue-500/5 border border-blue-500/10 animate-in fade-in slide-in-from-top-2">
+               <Select value={optionType} onValueChange={(v: 'CALL' | 'PUT') => setOptionType(v)}>
+                <SelectTrigger><SelectValue placeholder="Side" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="CALL">Call Contract</SelectItem>
+                  <SelectItem value="PUT">Put Contract</SelectItem>
+                </SelectContent>
+              </Select>
+              <Input type="number" placeholder="Strike Price" value={strike} onChange={e => setStrike(e.target.value)} />
+              <Input type="date" placeholder="Expiry" value={expiry} onChange={e => setExpiry(e.target.value)} />
+              <div className="flex items-center text-[10px] text-blue-400 font-mono uppercase tracking-tighter">
+                * 100 Share Multiplier Applied
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
-    ) : (
-      <div className="max-w-4xl mx-auto text-center border-2 border-dashed rounded-lg p-20 text-muted-foreground bg-muted/10">
-        <p className="text-lg font-medium text-foreground/50 mb-1">Your wallet is empty.</p>
-        <p className="text-sm">Search and add stocks above to construct your first portfolio.</p>
-      </div>
-    )}
-  </main>
+
+      {portfolio.length > 0 && (
+        <Card className="shadow-lg border-white/5 bg-zinc-900/5">
+          <CardHeader className="flex flex-row items-center justify-between border-b border-white/5 pb-6">
+            <div className="flex items-center gap-3">
+               <Input className="w-64 h-9 font-bold bg-transparent border-none px-2 focus-visible:ring-0 text-xl leading-9 tracking-tighter" value={walletName} onChange={(e) => setWalletName(e.target.value)} />
+               <Select onValueChange={handleSelectWallet} value={currentWalletId || undefined}>
+                  <SelectTrigger className="w-auto h-9 min-w-10 max-w-45 px-3  gap-2 items-center transition-all border-none bg-zinc-800"><SelectValue /></SelectTrigger>
+                  <SelectContent>{allWallets.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}</SelectContent>
+               </Select>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={handleSaveToDatabase} disabled={isSaving} className="border-white/10">
+                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4 mr-2" />} Save
+              </Button>
+              {currentWalletId && <Button variant="destructive" size="icon" className="h-9 w-9" onClick={handleDeleteWallet}><Trash2 className="h-4 w-4" /></Button>}
+            </div>
+          </CardHeader>
+          <CardContent className="pt-6">
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent border-white/5">
+                  <TableHead>Asset</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead className="text-right">Qty</TableHead>
+                  <TableHead className="text-right">Cost</TableHead>
+                  <TableHead className="text-right">Value</TableHead>
+                  <TableHead className="w-10"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {portfolio.map((item, idx) => (
+                  <TableRow key={idx} className="border-white/5">
+                    <TableCell>
+                      <div className="font-bold">{item.symbol}</div>
+                      <div className="text-[10px] text-zinc-500 uppercase">{item.description}</div>
+                    </TableCell>
+                    <TableCell>
+                      {item.asset_type === 'STOCK' ? (
+                        <span className="text-[10px] bg-zinc-800 px-2 py-0.5 rounded text-zinc-400">EQUITY</span>
+                      ) : (
+                        <span className="text-[10px] bg-blue-500/10 px-2 py-0.5 rounded text-blue-400 font-bold">
+                          {item.expiry} {item.strike} {item.option_type}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right font-mono">{item.quantity}</TableCell>
+                    <TableCell className="text-right font-mono">{formatCurrency(item.avgCost)}</TableCell>
+                    <TableCell className="text-right font-bold text-white">
+                      {formatCurrency(item.quantity * item.avgCost * (item.asset_type === 'OPTION' ? 100 : 1))}
+                    </TableCell>
+                    <TableCell>
+                      <Button variant="ghost" size="icon" onClick={() => setPortfolio(p => p.filter((_, i) => i !== idx))}><X className="h-4 w-4" /></Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+              <TableFooter className="bg-transparent border-t-2 border-white/5">
+                <TableRow>
+                  <TableCell colSpan={4} className="text-right text-zinc-500 uppercase text-[10px] font-bold">Total Portfolio Value</TableCell>
+                  <TableCell className="text-right text-xl font-bold text-emerald-500 tracking-tighter">{formatCurrency(totalPortfolioValue)}</TableCell>
+                  <TableCell />
+                </TableRow>
+              </TableFooter>
+            </Table>
+
+            <div className="mt-8 flex gap-4">
+               <Link href="/dashboard" className="flex-1">
+                 <Button variant="secondary" className="w-full bg-zinc-800 text-white border-white/5"><LayoutDashboard className="mr-2 h-4 w-4" /> Dashboard</Button>
+               </Link>
+               <Button onClick={handleSubmitAnalysis} disabled={isSubmitting || portfolio.length === 0} className="flex-2 bg-white text-black hover:bg-zinc-200">
+                  {isSubmitting ? <Loader2 className="animate-spin h-4 w-4" /> : "Run OptiHedge Analysis"} <ArrowRight className="ml-2 h-4 w-4" />
+               </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </main>
   );
 }
