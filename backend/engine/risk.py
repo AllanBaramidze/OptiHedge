@@ -4,92 +4,165 @@ import numpy as np
 import quantstats as qs
 import yfinance as yf
 import logging
+import time
+import datetime as dt
+import os
+from polygon import RESTClient
 
 logger = logging.getLogger(__name__)
 
+POLYGON_KEY = os.getenv("POLYGON_KEY")
+polygon_client = RESTClient(POLYGON_KEY) if POLYGON_KEY else None
+
+def build_occ_symbol(symbol: str, expiry: str, opt_type: str, strike: float) -> str:
+    """Converts standard option details into Polygon's OCC format (e.g., O:AAPL240119C00150000)"""
+    try:
+        date_str = expiry.replace("-", "")[2:]
+        type_char = "C" if "C" in opt_type.upper() else "P"
+        strike_str = f"{int(float(strike) * 1000):08d}"
+        return f"O:{symbol.upper()}{date_str}{type_char}{strike_str}"
+    except Exception:
+        return ""
+
 def _safe_float(val, default=0.0):
-    """Safely converts QuantStats outputs (Series, numpy floats, NaNs) to standard floats."""
+    """Safely converts QuantStats outputs to standard floats."""
     try:
         f_val = float(np.mean(val))
         return f_val if not pd.isna(f_val) else default
     except Exception:
         return default
 
-def run_portfolio_stats(tickers: list[str], weights: list[float], start_date: str) -> dict:
-    """Fetches data and uses QuantStats to calculate institutional risk metrics."""
-    
-    # Default fallback dictionary in case of complete failure
+def run_portfolio_stats(holdings: list[dict], start_date: str) -> dict:
+    """Fetches equity data from yfinance and options data from Polygon, with Delta-Normal fallback."""
     default_metrics = {
         "sharpe": 0.0, "beta": 0.0, "sortino": 0.0, "max_drawdown": 0.0, 
         "var": 0.0, "calmar": 0.0, "ulcer_index": 0.0, "skewness": 0.0, 
         "kurtosis": 0.0, "diversification": 1.0
     }
 
+    if not holdings:
+        return default_metrics
+        
+    tickers = list(set([str(h["ticker"]) for h in holdings]))
+
     try:
-        # 1. Fetch Portfolio Data
+        # 1. Fetch Underlying Equity Data (YFinance)
         raw_data = yf.download(tickers, start=start_date, progress=False)
-        if raw_data is None or raw_data.empty:
+        if raw_data is None or raw_data.empty: 
             return default_metrics
             
-        # Safely extract Close/Adj Close
         data = raw_data["Adj Close"] if "Adj Close" in raw_data.columns else raw_data["Close"]
         
-        if len(tickers) == 1:
-            data_1d = pd.DataFrame(data).iloc[:, 0]
-            port_rets = data_1d.pct_change().fillna(0) * weights[0]
-            div_score = 1.0 # 1 asset = no diversification
-        else:
-            rets = pd.DataFrame(data).ffill().pct_change().fillna(0)
-            weight_dict = dict(zip(tickers, weights))
-            aligned_weights = [weight_dict.get(str(col), 0.0) for col in rets.columns]
+        if isinstance(data, pd.Series):
+            data = data.to_frame(name=tickers[0])
             
-            port_rets = (rets * aligned_weights).sum(axis=1)
+        rets = data.ffill().pct_change().fillna(0.0)
+        
+        correlation_matrix = rets.corr().to_dict()
+        
+        # 2. Simulate Returns with Polygon Option Data + Fallback
+        port_rets = pd.Series(0.0, index=rets.index)
+        weighted_ind_vols = []
+        end_date = dt.date.today().strftime('%Y-%m-%d')
+        
+        for h in holdings:
+            ticker = str(h["ticker"])
+            weight = float(h.get("weight", 0.0))
+            if weight == 0: 
+                continue
             
-            # Custom Math: Diversification Ratio (Weighted Ind. Vol / Portfolio Vol)
-            try:
-                ind_vols = rets.std() * np.sqrt(252)
-                weighted_ind_vol = (ind_vols * aligned_weights).sum()
-                port_vol = port_rets.std() * np.sqrt(252)
-                div_score = float(weighted_ind_vol / port_vol) if port_vol > 0 else 1.0
-            except Exception:
-                div_score = 1.0
+            asset_ret = None
+            
+            if h.get("asset_type") == "OPTION" and polygon_client:
+                expiry = str(h.get("expiry") or "")
+                opt_type = str(h.get("option_type") or "")
+                strike = float(h.get("strike") or 0.0)
+                
+                if expiry and opt_type and strike > 0:
+                    occ_symbol = build_occ_symbol(ticker, expiry, opt_type, strike)
+                    
+                    try:
+                        aggs = []
+                        raw_aggs = polygon_client.list_aggs(occ_symbol, 1, "day", start_date, end_date)
+                        
+                        for item in raw_aggs:
+                            ts = getattr(item, "timestamp", None)
+                            c_price = getattr(item, "close", None)
+                            if ts is not None and c_price is not None:
+                                aggs.append({"date": ts, "close": c_price})
+                        
+                        if aggs:
+                            df_opt = pd.DataFrame(aggs)
+                            df_opt["date"] = pd.to_datetime(df_opt["date"], unit="ms").dt.tz_localize(None)
+                            df_opt.set_index("date", inplace=True)
+                            asset_ret = df_opt["close"].pct_change().reindex(rets.index).fillna(0.0)
+                            
+                        # Respect Polygon free plan limit
+                        time.sleep(12.5) 
+                        
+                    except Exception as e:
+                        logger.warning(f"Polygon API Error for {occ_symbol}: {e}. Falling back to Delta-Normal.")
+            
+            # --- DELTA-NORMAL FALLBACK OR STANDARD STOCK ---
+            if asset_ret is None:
+                base_ret = rets.get(ticker)
+                
+                if base_ret is not None:
+                    if h.get("asset_type") == "OPTION":
+                        underlying_series = data.get(ticker)
+                        underlying_price = float(underlying_series.iloc[-1]) if underlying_series is not None else 0.0
+                        option_price = float(h.get("price", 0.0))
+                        
+                        if option_price > 0 and underlying_price > 0:
+                            leverage = 0.5 * (underlying_price / option_price)
+                            leverage = float(min(max(leverage, 1.0), 30.0))
+                        else:
+                            leverage = 1.0
+                            
+                        asset_ret = base_ret.copy() * leverage
+                    else:
+                        asset_ret = base_ret.copy()
+                else:
+                    asset_ret = pd.Series(0.0, index=rets.index)
+                
+            port_rets += asset_ret * weight
+            weighted_ind_vols.append(asset_ret.std() * np.sqrt(252) * weight)
 
         port_rets.index = pd.to_datetime(port_rets.index).tz_localize(None)
 
-        # 2. Fetch Benchmark Data (^GSPC = S&P 500)
-        raw_bench = yf.download("^GSPC", start=start_date, progress=False)
-        if raw_bench is None or raw_bench.empty:
-            return default_metrics
-            
-        bench_data = raw_bench["Adj Close"] if "Adj Close" in raw_bench.columns else raw_bench["Close"]
-        bench_1d = pd.DataFrame(bench_data).iloc[:, 0]
-            
-        bench_rets = bench_1d.pct_change().dropna()
-        bench_rets.index = pd.to_datetime(bench_rets.index).tz_localize(None)
-
-        # 3. Let QuantStats do the heavy lifting
-        greeks = qs.stats.greeks(port_rets, bench_rets)
+        # Diversification Math
         try:
-            if isinstance(greeks, pd.Series):
-                beta = float(greeks.get('beta', 0.0))
-            elif isinstance(greeks, pd.DataFrame):
-                beta = float(greeks['beta'].iloc[0])
-            else:
-                beta = 0.0
+            port_vol = port_rets.std() * np.sqrt(252)
+            div_score = float(sum(weighted_ind_vols) / port_vol) if port_vol > 0 else 1.0
         except Exception:
+            div_score = 1.0
+
+        # 3. Benchmark Data
+        raw_bench = yf.download("^GSPC", start=start_date, progress=False)
+        if raw_bench is not None and not raw_bench.empty:
+            bench_data = raw_bench["Adj Close"] if "Adj Close" in raw_bench.columns else raw_bench["Close"]
+            bench_rets = pd.DataFrame(bench_data).iloc[:, 0].pct_change().dropna()
+            bench_rets.index = pd.to_datetime(bench_rets.index).tz_localize(None)
+            greeks = qs.stats.greeks(port_rets, bench_rets)
+            beta = float(greeks.get('beta', 0.0)) if isinstance(greeks, pd.Series) else 0.0
+        else:
             beta = 0.0
 
+        # 4. Compile Metrics
         return {
             "sharpe": round(_safe_float(qs.stats.sharpe(port_rets)), 2),
             "beta": round(beta, 2),
             "sortino": round(_safe_float(qs.stats.sortino(port_rets)), 2),
-            "max_drawdown": round(_safe_float(qs.stats.max_drawdown(port_rets)), 4), # 4 decimals for accurate %
+            "max_drawdown": round(_safe_float(qs.stats.max_drawdown(port_rets)), 4), 
             "var": round(_safe_float(qs.stats.value_at_risk(port_rets)), 4),
             "calmar": round(_safe_float(qs.stats.calmar(port_rets)), 2),
             "ulcer_index": round(_safe_float(qs.stats.ulcer_index(port_rets)), 4),
             "skewness": round(_safe_float(qs.stats.skew(port_rets)), 2),
             "kurtosis": round(_safe_float(qs.stats.kurtosis(port_rets)), 2),
-            "diversification": round(div_score, 2)
+            "diversification": round(div_score, 2),
+            "correlation_matrix": correlation_matrix
+
+            
         }
 
     except Exception as e:
@@ -97,58 +170,7 @@ def run_portfolio_stats(tickers: list[str], weights: list[float], start_date: st
         return default_metrics
 
 def calculate_movers(tickers: list[str]) -> dict:
-    """Calculates top gainers and losers across multiple timeframes with safety fallbacks."""
-    timeframes = {"1D": 1, "1W": 5, "1M": 21, "6M": 126, "1Y": 252, "10Y": 2520}
-    movers = {tf: [] for tf in timeframes.keys()}
-    
-    if not tickers:
-        return movers
-        
-    try:
-        # Use period="max" to ensure we get data even for newer stocks
-        raw_data = yf.download(tickers, period="max", progress=False)
-        if raw_data is None or raw_data.empty:
-            return movers
-            
-        data = raw_data["Adj Close"] if "Adj Close" in raw_data.columns else raw_data["Close"]
-        
-        # Ensure we are working with a DataFrame even for 1 ticker
-        df = pd.DataFrame(data)
-        if len(tickers) == 1:
-            df.columns = tickers
-            
-        df = df.ffill()
-        
-        for tf, days in timeframes.items():
-            current_tf_list = []
-            for ticker in tickers:
-                if ticker not in df.columns:
-                    continue
-                
-                series = df[ticker].dropna()
-                if len(series) < 2:
-                    continue
-                
-                # Get the latest price and the price X days ago
-                latest_price = series.iloc[-1]
-                
-                # If we don't have enough history for the TF, take the oldest available
-                lookback_idx = max(0, len(series) - days - 1)
-                past_price = series.iloc[lookback_idx]
-                
-                if past_price > 0:
-                    change = (latest_price - past_price) / past_price
-                    current_tf_list.append({"ticker": ticker, "value": float(change)})
-            
-            # Sort movers by performance (highest first)
-            movers[tf] = sorted(current_tf_list, key=lambda x: x["value"], reverse=True)
-            
-    except Exception as e:
-        logger.error(f"Movers Engine Error: {e}")
-        
-    return movers
     """Calculates top gainers and losers across multiple timeframes."""
-    # Trading days roughly equal to the timeframes
     timeframes = {"1D": 1, "1W": 5, "1M": 21, "6M": 126, "1Y": 252, "10Y": 2520}
     movers = {tf: [] for tf in timeframes.keys()}
     
@@ -156,14 +178,12 @@ def calculate_movers(tickers: list[str]) -> dict:
         return movers
         
     try:
-        # Fetch up to 10 years of data
         raw_data = yf.download(tickers, period="10y", progress=False)
         if raw_data is None or raw_data.empty:
             return movers
             
         data = raw_data["Adj Close"] if "Adj Close" in raw_data.columns else raw_data["Close"]
         
-        # Force 2D DataFrame for safety
         if len(tickers) == 1:
             data = pd.DataFrame(data)
             data.columns = tickers
@@ -172,11 +192,10 @@ def calculate_movers(tickers: list[str]) -> dict:
         latest = data.iloc[-1]
         
         for tf, days in timeframes.items():
-            # Check if we have enough historical data for this timeframe
             if len(data) > days:
                 past = data.iloc[-days - 1]
             elif len(data) > 0:
-                past = data.iloc[0] # Fallback to max available if stock is newer than 10y
+                past = data.iloc[0] 
             else:
                 continue
                 

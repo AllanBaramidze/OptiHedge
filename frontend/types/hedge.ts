@@ -13,6 +13,7 @@ export interface RiskMetrics {
   skewness: number;
   kurtosis: number;
   diversification: number;
+  correlation_matrix?: Record<string, Record<string, number>>;
 }
 
 export interface Holding {
