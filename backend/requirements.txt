@@ -9,18 +9,15 @@ scipy
 nltk
 requests
 python-multipart
-# --- The Heavy Engines ---
 quantstats
 polygon-api-client
 scikit-learn
 matplotlib
-# --- AI & LangGraph ---
 langchain
 langchain-openai
 langchain-community
 langgraph
 openai
-# --- NEW: Groq & Tools ---
 langchain-groq
 groq
 duckduckgo-search
