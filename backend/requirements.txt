@@ -9,4 +9,9 @@ scipy
 nltk
 requests
 python-multipart
-# Add any other core libraries you specifically import in your code
+# --- Add these for your Risk & AI Engine ---
+quantstats
+langchain
+langchain-openai
+langchain-community
+langgraph
