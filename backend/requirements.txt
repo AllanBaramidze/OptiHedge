@@ -9,12 +9,14 @@ scipy
 nltk
 requests
 python-multipart
+# --- The Heavy Engines ---
 quantstats
+polygon-api-client
+scikit-learn
+matplotlib
+# --- AI & LangGraph ---
 langchain
 langchain-openai
 langchain-community
 langgraph
-# --- Added to fix the current crash ---
-polygon-api-client
-scikit-learn
-matplotlib
+openai
