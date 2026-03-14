@@ -9,13 +9,13 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
-# 1. Load the environment variables FIRST
+# 1. Load environment variables
 load_dotenv()
 
 # 2. Initialize Groq LLM
 llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0)
 
-# 3. Define the State
+# 3. Define the State (added teacher_explanation)
 class PortfolioState(TypedDict):
     holdings: List[Dict[str, Any]]
     metrics: Dict[str, float]
@@ -26,6 +26,7 @@ class PortfolioState(TypedDict):
     polymarket_data: List[Dict[str, Any]]
     hypothetical_risks: str
     final_report: str
+    teacher_explanation: str  # New field for the teacher agent's output
 
 # --- NODES ---
 
@@ -60,18 +61,31 @@ def detect_red_flags(state: PortfolioState) -> Dict[str, Any]:
 def generate_overview(state: PortfolioState) -> Dict[str, Any]:
     """Node 2: Translates the math/red flags into a human-readable executive summary."""
     holdings_list = [h.get("ticker") for h in state.get("holdings", [])]
+    metrics = state.get("metrics", {})
     flags = state.get("red_flags", [])
     
+    # Enhanced prompt with more context and professional depth
     prompt = f"""
-    You are an elite quantitative risk analyst for a hedge fund.
-    I am providing you with the assets in a client's portfolio and a list of mathematical red flags our risk engine caught.
-    
-    Portfolio Assets: {holdings_list}
-    Mathematical Red Flags: {flags}
-    
-    Write a concise, professional 2-paragraph executive summary of the current portfolio risk. 
-    Do not invent new metrics, just explain the provided red flags in a digestible way for a portfolio manager.
-    No pleasantries. Get straight to the analysis.
+    You are an elite quantitative risk analyst at a top-tier hedge fund. Your task is to produce a detailed, 
+    professional executive summary of the portfolio's risk profile based on the provided data.
+
+    Portfolio Holdings: {holdings_list}
+    Key Metrics:
+    - Beta: {metrics.get('beta', 'N/A')}
+    - Value at Risk (VaR): {metrics.get('var', 'N/A')}
+    - Maximum Drawdown: {metrics.get('max_drawdown', 'N/A')}
+    - Sharpe Ratio: {metrics.get('sharpe', 'N/A')}
+    - Diversification Score: {metrics.get('diversification', 'N/A')}
+    Quantitative Red Flags: {flags}
+
+    Write a concise but insightful executive summary (2-3 paragraphs) that:
+    - Explains each red flag in the context of the current market environment.
+    - Highlights the most pressing risks and their potential impact on portfolio performance.
+    - Avoids inventing new data; strictly interpret the provided metrics and flags.
+    - Uses professional, authoritative language suitable for a portfolio manager.
+    - Concludes with a brief statement on the urgency of addressing these risks.
+
+    Do not include pleasantries or marketing language. Start directly with the analysis.
     """
     
     response = llm.invoke([HumanMessage(content=prompt)])
@@ -81,23 +95,33 @@ def generate_overview(state: PortfolioState) -> Dict[str, Any]:
 # --- SCHEMAS ---
 class HedgeIdeas(BaseModel):
     common_hedges: List[str] = Field(description="1 to 2 traditional financial hedges (e.g., specific Options, inverse ETFs) to mitigate the portfolio risks.")
-    creative_hedges: List[str] = Field(description="3 to 5 real-world event themes (e.g., 'Fed rate cut delayed', 'Middle East escalation') that could be traded on prediction markets to offset the risks.")
+    creative_hedges: List[str] = Field(description="3 to 6 real-world event themes (e.g., 'Fed rate cut delayed', 'Middle East escalation') that could be traded on prediction markets to offset the risks.")
 
 
 def generate_hedging_ideas(state: PortfolioState) -> Dict[str, Any]:
     """Node 3: Brainstorms traditional and creative (Polymarket) hedging strategies."""
     overview = state.get("risk_overview", "")
     holdings = [h.get("ticker") for h in state.get("holdings", [])]
+    metrics = state.get("metrics", {})
     
+    # Enhanced prompt: ask for justification and context
     prompt = f"""
-    You are a brilliant macro-economic strategist for a hedge fund.
-    Review the following portfolio and its current risk profile:
-    Holdings: {holdings}
-    Risk Overview: "{overview}"
-    
-    Your job is to brainstorm ways to hedge this specific risk.
-    1. Suggest 1-2 'common_hedges' using standard financial instruments (e.g., VIX calls, specific sector puts).
-    2. Suggest 3-5 'creative_hedges'. These must be real-world geopolitical or macroeconomic events that, if they occur, would negatively impact this portfolio. We will look these up on Polymarket later. Keep the creative event descriptions concise (under 8 words each).
+    You are a brilliant macro-economic strategist at a hedge fund. Your goal is to design hedging strategies 
+    that specifically address the risks identified in the portfolio.
+
+    Portfolio Holdings: {holdings}
+    Current Risk Profile Summary: "{overview}"
+    Key Metrics: Beta={metrics.get('beta')}, VaR={metrics.get('var')}, Sharpe={metrics.get('sharpe')}
+
+    Generate hedging ideas in two categories:
+    1. **Common Hedges** (1-2 ideas): Traditional financial instruments (e.g., put options on indices, inverse ETFs, VIX futures) 
+       that would directly offset the portfolio's beta or sector exposures. For each, briefly explain why it is suitable.
+    2. **Creative Hedges** (3-5 ideas): Real-world geopolitical or macroeconomic events (under 8 words each) that, if they occurred, 
+       would likely hurt this portfolio. These events will later be looked up on Polymarket. Ensure they are plausible and 
+       directly connected to the portfolio's vulnerabilities (e.g., if the portfolio holds tech stocks, consider events like 
+       'Fed accelerates rate hikes' or 'China tightens tech regulations').
+
+    For every hedge (common and creative), include a one‑sentence rationale on how it mitigates the identified risk.
     """
     
     structured_llm = llm.with_structured_output(HedgeIdeas)
@@ -152,8 +176,7 @@ def fetch_polymarket_data(state: PortfolioState) -> Dict[str, Any]:
                         # 2. Grab the specific question for this sub-market
                         question = market.get('question', event.get('title', '')).lower()
                         
-                        # 3. THE FIX: Ensure at least one major keyword from our theme is actually in this question!
-                        # This skips the "Ukraine" question inside the GTA VI event and finds the "Taiwan" one.
+                        # 3. Ensure at least one major keyword from our theme is actually in this question!
                         if any(kw in question for kw in keywords):
                             
                             tokens = json.loads(market.get('clobTokenIds', '[]'))
@@ -191,23 +214,41 @@ def fetch_polymarket_data(state: PortfolioState) -> Dict[str, Any]:
             
     return {"polymarket_data": poly_data}
 
+
 def calculate_hypothetical_risk(state: PortfolioState) -> Dict[str, Any]:
     """Node 5: Estimates the quantitative impact of the proposed hedges."""
     metrics = state.get("metrics", {})
     common = state.get("common_hedges", [])
     poly_data = [d["theme"] for d in state.get("polymarket_data", []) if d["yes_price"] != "N/A"]
     
+    # Enhanced prompt with quantitative detail and scenario analysis
     prompt = f"""
-    You are a quantitative risk modeler.
-    Current Portfolio Metrics: Beta: {metrics.get('beta')}, VaR: {metrics.get('var')}, Sharpe: {metrics.get('sharpe')}.
-    Proposed Hedges: {common} and macro events: {poly_data}.
-    
-    If the client deployed 10% of their capital into a mix of these hedges, estimate the directional impact on the portfolio's Beta and VaR. 
-    Write a single, highly analytical paragraph explaining how much the Beta might drop and how the VaR curve would flatten. Use estimated numbers (e.g., "Beta would likely compress from 2.15 to ~1.4").
+    You are a quantitative risk modeler at an investment firm. Your task is to estimate the impact of the proposed hedges 
+    on the portfolio's risk metrics.
+
+    Current Portfolio Metrics:
+    - Beta: {metrics.get('beta')}
+    - Value at Risk (VaR): {metrics.get('var')}
+    - Sharpe Ratio: {metrics.get('sharpe')}
+    - Diversification Score: {metrics.get('diversification')}
+
+    Proposed Hedges:
+    - Traditional: {common}
+    - Event‑based (to be traded on Polymarket): {poly_data}
+
+    Assume the client allocates 10% of the portfolio’s capital to a combination of these hedges. Provide a detailed 
+    quantitative assessment that includes:
+    - The estimated reduction in portfolio Beta and VaR (use approximate numerical ranges, e.g., "Beta could drop from 2.15 to 1.3‑1.5").
+    - How the Sharpe ratio might change, considering the cost of hedges.
+    - Any assumptions you make about hedge correlation and effectiveness.
+    - A brief discussion of tail risk mitigation (e.g., how the left tail of the return distribution might be reshaped).
+
+    Write a single, highly analytical paragraph. Use precise language and ground your estimates in the given metrics.
     """
     
     response = llm.invoke([HumanMessage(content=prompt)])
     return {"hypothetical_risks": response.content}
+
 
 def compile_final_report(state: PortfolioState) -> Dict[str, Any]:
     """Node 6: Synthesizes the entire pipeline into a clean Markdown report."""
@@ -226,47 +267,102 @@ def compile_final_report(state: PortfolioState) -> Dict[str, Any]:
             
     common_str = "\n".join([f"- {h}" for h in common])
     
+    # Enhanced prompt: now includes a placeholder for the teacher's explanation (added later)
     prompt = f"""
-    You are the Head of Risk Management at a top-tier hedge fund.
-    Take the following raw data and format it into a stunning, highly professional Markdown executive report.
-    
+    You are the Head of Risk Management at a top-tier hedge fund. Compile the following raw data into a stunning, 
+    highly professional Markdown executive report. The report will be read by the investment committee.
+
     Data to include:
-    1. Risk Overview: {overview}
-    2. Traditional Hedges: {common_str}
-    3. Asymmetric Event Hedges (Polymarket): {poly_str}
-    4. Projected Post-Hedge Risk: {hypo_risk}
-    
+    1. **Current Risk Profile**: {overview}
+    2. **Traditional Hedges**: {common_str}
+    3. **Asymmetric Event Hedges (Polymarket)**: {poly_str}
+    4. **Projected Post‑Hedge Risk Metrics**: {hypo_risk}
+
     Format requirements:
     - Use clean Markdown headings (e.g., ## 1. Current Risk Profile).
     - Ensure the Polymarket links are clickable markdown links.
-    - Keep the tone authoritative, quantitative, and concise.
-    - Do not add conversational fluff at the beginning or end. Output ONLY the markdown report.
+    - Keep the tone authoritative, quantitative, and concise. Avoid marketing fluff.
+    - Include a brief conclusion summarizing the recommended next steps.
+
+    Output ONLY the markdown report, no additional commentary.
     """
     
     response = llm.invoke([SystemMessage(content=prompt)])
     return {"final_report": response.content}
 
 
+# --- NEW NODE: TEACHER EXPLANATION ---
+def teacher_explanation(state: PortfolioState) -> Dict[str, Any]:
+    """
+    Node 7: Provides an educational, plain‑language explanation of all decisions and concepts.
+    This agent acts like a teacher, making the analysis accessible to a novice investor.
+    """
+    holdings = [h.get("ticker") for h in state.get("holdings", [])]
+    metrics = state.get("metrics", {})
+    red_flags = state.get("red_flags", [])
+    overview = state.get("risk_overview", "")
+    common_hedges = state.get("common_hedges", [])
+    creative_hedges = state.get("creative_hedges", [])
+    poly_data = state.get("polymarket_data", [])
+    hypo_risk = state.get("hypothetical_risks", "")
+    
+    prompt = f"""
+    You are an experienced finance professor explaining investment concepts to a classroom of students. 
+    Your task is to take the entire analysis generated by our automated system and explain it in simple, 
+    educational terms. The student has basic investment knowledge but may not understand terms like beta, 
+    VaR, or hedging.
+
+    Here is the complete context:
+
+    Portfolio Holdings: {holdings}
+    Key Metrics: Beta = {metrics.get('beta')}, Value at Risk (VaR) = {metrics.get('var')}, 
+                 Maximum Drawdown = {metrics.get('max_drawdown')}, Sharpe Ratio = {metrics.get('sharpe')}, 
+                 Diversification Score = {metrics.get('diversification')}
+    Red Flags Detected: {red_flags}
+    Risk Overview (as written by an analyst): "{overview}"
+    Traditional Hedges Proposed: {common_hedges}
+    Creative (Event‑based) Hedges: {creative_hedges}
+    Polymarket Data: {poly_data}
+    Hypothetical Impact of Hedges: "{hypo_risk}"
+
+    Please write a comprehensive, educational explanation that covers:
+
+    1. **What each metric means** (Beta, VaR, Sharpe, drawdown, diversification) – define them in plain English.
+    2. **Why the red flags matter** – connect each flag to a real‑world risk the portfolio faces.
+    3. **How the proposed hedges work** – for both traditional and creative hedges, explain the mechanism (e.g., options, inverse ETFs, betting on events) and why they could protect the portfolio.
+    4. **The role of prediction markets** – what Polymarket is, how event‑based trading can hedge against macro risks.
+    5. **Interpreting the hypothetical impact** – explain what the projected changes in Beta and VaR mean for the portfolio's safety.
+    6. **Key takeaways** – summarise what the student should understand about risk management from this exercise.
+
+    Use analogies, avoid unnecessary jargon, and keep the tone friendly but authoritative. Break the explanation into sections with clear headings. Aim for about 1000–1500 words.
+    """
+    
+    response = llm.invoke([HumanMessage(content=prompt)])
+    return {"teacher_explanation": response.content}
+
+
 # --- GRAPH COMPILATION ---
 
 workflow = StateGraph(PortfolioState)
 
-# 1. Add ALL nodes first
+# Add all nodes
 workflow.add_node("analyzer", detect_red_flags)
 workflow.add_node("overview", generate_overview)
 workflow.add_node("ideation", generate_hedging_ideas)
 workflow.add_node("polymarket", fetch_polymarket_data)
 workflow.add_node("hypothetical_risk", calculate_hypothetical_risk) 
 workflow.add_node("reporter", compile_final_report)                 
+workflow.add_node("teacher", teacher_explanation)                   # New node
 
-# 2. Connect the edges in order
+# Connect edges
 workflow.set_entry_point("analyzer")
 workflow.add_edge("analyzer", "overview")
 workflow.add_edge("overview", "ideation")             
 workflow.add_edge("ideation", "polymarket")
 workflow.add_edge("polymarket", "hypothetical_risk")                
 workflow.add_edge("hypothetical_risk", "reporter")                  
-workflow.add_edge("reporter", END) # Only the reporter goes to END                  
+workflow.add_edge("reporter", "teacher")                            # Now go to teacher
+workflow.add_edge("teacher", END)                                   # Teacher ends the graph
 
 optihedge_chain = workflow.compile()
 
@@ -291,7 +387,8 @@ if __name__ == "__main__":
         "creative_hedges": [],
         "polymarket_data": [],
         "hypothetical_risks": "",
-        "final_report": ""
+        "final_report": "",
+        "teacher_explanation": ""        # New field initialized
     }
     
     # Run the graph
@@ -301,5 +398,9 @@ if __name__ == "__main__":
     print("🚀 OPTIHEDGE FINAL AI REPORT GENERATED")
     print("========================================================\n")
     print(result.get("final_report", "Report generation failed."))
-    print("\n========================================================\n")
     
+    print("\n========================================================")
+    print("📚 TEACHER'S EXPLANATION")
+    print("========================================================\n")
+    print(result.get("teacher_explanation", "Explanation not available."))
+    print("\n========================================================\n")
