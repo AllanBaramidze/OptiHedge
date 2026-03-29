@@ -1,9 +1,9 @@
+import HomePageContainer from "./homepage/HomePageContainer";
 
-
-export default function Home() {
+export default function Page() {
   return (
-    <div>
-      
-    </div>
+    <main className="bg-black min-h-screen">
+      <HomePageContainer />
+    </main>
   );
 }
